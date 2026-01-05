@@ -13,7 +13,7 @@ ViCal is a terminal-based calendar and task manager with Vi-like motions and com
 ## Installation
 Clone the repo:
 ```bash
-git clone https://github.com/ma-choo/calicula.git
+git clone https://github.com/ma-choo/vical.git
 cd vical
 ```
 

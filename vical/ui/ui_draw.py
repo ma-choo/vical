@@ -1,8 +1,7 @@
-# ui_draw.py
+# vical/ui/ui_draw.py
 import curses
 from datetime import date, timedelta
-from utils import get_day_name, get_month_name
-
+from ..utils import get_day_name, get_month_name
 
 def update_prompt(ui, text):
     ui.promptwin.erase()

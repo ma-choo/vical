@@ -1,4 +1,4 @@
-# utils.py - date/time utility functions
+# vical/utils.py
 import calendar
 from datetime import date, datetime
 

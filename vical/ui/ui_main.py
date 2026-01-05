@@ -1,4 +1,4 @@
-# ui_main.py
+# vical/ui/ui_main.py
 import curses
 import copy
 import time
@@ -44,14 +44,15 @@ class UI:
 
         self.registers = {
             '"': None,  # unnamed register
-            **{str(i): None for i in range(10)},                     # '0'–'9'
-            **{chr(c): None for c in range(ord('a'), ord('z') + 1)}  # 'a'–'z'
+            **{str(i): None for i in range(10)},                     # 0-9
+            **{chr(c): None for c in range(ord('a'), ord('z') + 1)}  # a-z
         }
 
-        # TODO: last_saved flag
         self.history_undo = []
         self.history_redo = []
         self.MAX_HISTORY = 50
+        self.last_saved_snapshot = self.snapshot_state()
+
 
         self.msg = ("calicula 0.01 - type :help for help or :q for quit", 0)
         self.HELP = "todo"
@@ -80,8 +81,8 @@ class UI:
         self.subcalendars = copy.deepcopy(snapshot["subcalendars"])
         self.selected_subcal_index = snapshot["selected_subcal_index"]
         self.selected_task_index = snapshot["selected_task_index"]
+        self.saved = (snapshot == self.last_saved_snapshot)
         self.redraw = True
-        self.saved = False
 
 
     def push_history(self):
@@ -158,7 +159,6 @@ class UI:
         curses.flushinp()
         self.redraw = True
         draw_screen(self)
-
 
 
     @property

@@ -1,32 +1,19 @@
-# ui_actions.py
+# vical/ui/ui_actions.py
 import curses
 from datetime import date, timedelta
-from subcalendar import save_subcalendars, Task
-from ui.ui_draw import update_prompt, draw_help, draw_screen
-
-
-# wrapper to save state on actions that warrant it
-def _save_state(func):
-    def wrapper(ui, *args, **kwargs):
-        ui.push_history()
-        return func(ui, *args, **kwargs)
-    return wrapper
-
+from ..subcalendar import Subcalendar, save_subcalendars, Task
+from .ui_draw import update_prompt, draw_help, draw_screen
 
 def _confirm(ui, text):
     update_prompt(ui, text)
     key = ui.promptwin.getch()
-
-    if chr(key).lower() != 'y':
-        return True
-    else:
-        ui.msg = ("Cancelled", 0)
-        return False
+    return chr(key).lower() == 'y'
 
 
 def write(ui):
     try:
         save_subcalendars(ui.subcalendars)
+        ui.last_saved_snapshot = ui.snapshot_state()
         ui.saved = True
         ui.msg = ("Changes saved", 0)
     except Exception as e:
@@ -53,7 +40,6 @@ def force_quit(ui):
 def undo(ui):
     if not ui.history_undo:
         ui.msg = ("Nothing to undo", 1)
-        ui.saved = True # TODO - make this smarter
         return
 
     ui.history_redo.append(ui.snapshot_state())  # save current for redo
@@ -126,7 +112,6 @@ def goto(ui):
 
 
 # tasks
-@_save_state # TODO only save state on success
 def new_task(ui):
     selected_date = ui.selected_date
 
@@ -149,8 +134,9 @@ def new_task(ui):
     ui.saved = False
     ui.redraw = True
 
+    ui.push_history()
+
 # TODO: these only work when the parent subcalendar is selected. these actions should be agnostic of the selected subcalendar
-@_save_state
 def yank_task(ui):
     task = ui.selected_task
     if not task:
@@ -164,13 +150,14 @@ def yank_task(ui):
     ui.msg = (f"Yanked '{task.name}'", 0)
 
 
-@_save_state
 def delete_task(ui):
     """Delete current task, store in registers."""
     task = ui.selected_task
     if not task:
         ui.msg = ("No task selected", 1)
         return
+    
+    ui.push_history()
 
     subcal = ui.selected_subcal
     removed = subcal.pop_task(task)
@@ -191,13 +178,14 @@ def delete_task(ui):
     ui.redraw = True
     ui.clamp_task_index()
 
-
-@_save_state
-def paste_task(ui, to_selected_subcal=False):
+# TODO: these paste functions don't persist, not sure if the issue is with paste or delete
+def paste_task(ui):
     reg = ui.registers['"']
     if not reg:
         ui.msg = ("Nothing to paste", 1)
         return
+
+    ui.push_history()
 
     task, original_subcal = reg
     new_task = task.copy()
@@ -205,10 +193,30 @@ def paste_task(ui, to_selected_subcal=False):
     new_task.month = ui.selected_date.month
     new_task.day = ui.selected_date.day
 
-    if to_selected_subcal:
-        target = ui.selected_subcal
-    else:
-        target = original_subcal
+    target = original_subcal
+
+    target.insert_task(new_task)
+    ui.msg = (f"Pasted '{task.name}' into '{target.name}'", 0)
+    ui.saved = False
+    ui.redraw = True
+    
+
+
+def paste_task_to_selected_subcal(ui):
+    reg = ui.registers['"']
+    if not reg:
+        ui.msg = ("Nothing to paste", 1)
+        return
+
+    ui.push_history()
+
+    task, original_subcal = reg
+    new_task = task.copy()
+    new_task.year = ui.selected_date.year
+    new_task.month = ui.selected_date.month
+    new_task.day = ui.selected_date.day
+
+    target = ui.selected_subcal
 
     target.insert_task(new_task)
     ui.msg = (f"Pasted '{task.name}' into '{target.name}'", 0)
@@ -216,14 +224,14 @@ def paste_task(ui, to_selected_subcal=False):
     ui.redraw = True
 
 
-@_save_state
 def rename_task(ui):
     task = ui.selected_task
+    ui.push_history()
 
 
-@_save_state
 def mark_complete(ui):
     if ui.selected_task:
+        ui.push_history()
         ui.selected_task.toggle_completed()
         ui.saved = False
 
@@ -248,7 +256,6 @@ def scroll_up(ui):
 
 
 # subcalendars
-@_save_state
 def new_subcal(ui):
     update_prompt(ui, "New subcalendar name: ")
     curses.echo()
@@ -258,6 +265,8 @@ def new_subcal(ui):
     if not name:
         ui.msg = (f"Invalid name", 1)
         return
+
+    ui.push_history()
 
     update_prompt(ui, "Choose color (1–5): ")
     for c in range(1, 6):
@@ -275,7 +284,6 @@ def new_subcal(ui):
             ui.msg = ("Calendar creation canceled", 0)
             return
 
-    from subcalendar import Subcalendar
     new_cal = Subcalendar(name, color)
     ui.subcalendars.append(new_cal)
     ui.selected_subcal_index = len(ui.subcalendars) - 1
@@ -283,20 +291,18 @@ def new_subcal(ui):
     ui.saved = False
 
 
-
-@_save_state
 def delete_subcal(ui):
     subcal = ui.selected_subcal
-    
     if not subcal:
         ui.msg = ("No subcalendar selected", 1)
         return
 
     confirm = _confirm(ui, f"Delete subcalendar '{subcal.name}'? (y/N): ")
-
     if confirm:
         ui.msg = ("Cancelled", 0)
         return
+
+    ui.push_history()
 
     try:
         ui.subcalendars.remove(subcal)
@@ -311,7 +317,7 @@ def delete_subcal(ui):
         ui.msg = (f"Failed to delete subcalendar '{subcal.name}'", 1)
 
 
-@_save_state
+
 def rename_subcal(ui):
     subcal = ui.selected_subcal
     # TODO
@@ -342,9 +348,12 @@ def prev_subcal(ui):
     ui.selected_subcal_index = (ui.selected_subcal_index - 1) % len(ui.subcalendars)
 
 
-@_save_state
 def change_subcal_color(ui):
     subcal = ui.selected_subcal
+    if not subcal:
+        return
+
+    ui.push_history()
 
     update_prompt(ui, f"Choose color for '{subcal.name}': ")
     for c in range(1, 6):

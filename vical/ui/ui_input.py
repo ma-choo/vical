@@ -1,7 +1,7 @@
-# ui_input.py
+# vical/ui/ui_input.py
 import curses
-from ui import ui_actions
-from ui.ui_draw import update_prompt
+from . import ui_actions
+from .ui_draw import update_prompt
 
 SPACE = ord(' ')
 ESC = 27
@@ -17,8 +17,8 @@ OPERATORS = {} # operator char -> operator handler
 COMMANDS = {}  # string -> function
 
 
-def register_key(key, action):
-    KEYMAP[key] = action
+def register_key(key, func):
+    KEYMAP[key] = func
 
 
 def register_motion(key, value):
@@ -50,20 +50,20 @@ def operator_change(ui, key):
 
 def init_default_keys():
     # normal mode keys
-    register_key(ord('u'), 'undo')
-    register_key(ord('U'), 'redo')
-    register_key(ord('T'), 'new_task')
-    register_key(ord('D'), 'delete_task')
-    register_key(ord('y'), 'yank_task')
-    register_key(ord('R'), 'rename_task')
-    register_key(ord('p'), lambda ui: ui_actions.paste_task(ui, to_selected_subcal=False))
-    register_key(ord('P'), lambda ui: ui_actions.paste_task(ui, to_selected_subcal=True))
-    register_key(ord('z'), 'hide_subcal')
-    register_key(SPACE, 'mark_complete')
-    register_key(CTRL_J, 'scroll_down')
-    register_key(CTRL_K, 'scroll_up')
-    register_key(ord('['), 'prev_subcal')
-    register_key(ord(']'), 'next_subcal')
+    register_key(ord('u'), ui_actions.undo)
+    register_key(ord('U'), ui_actions.redo)
+    register_key(ord('T'), ui_actions.new_task)
+    register_key(ord('D'), ui_actions.delete_task)
+    register_key(ord('y'), ui_actions.yank_task)
+    register_key(ord('R'), ui_actions.rename_task)
+    register_key(ord('p'), ui_actions.paste_task)
+    register_key(ord('P'), ui_actions.paste_task_to_selected_subcal)
+    register_key(ord('z'), ui_actions.hide_subcal)
+    register_key(SPACE, ui_actions.mark_complete)
+    register_key(CTRL_J, ui_actions.scroll_down)
+    register_key(CTRL_K, ui_actions.scroll_up)
+    register_key(ord('['), ui_actions.prev_subcal)
+    register_key(ord(']'), ui_actions.next_subcal)
 
     # motions
     register_motion(ord('h'), -1)
@@ -75,27 +75,25 @@ def init_default_keys():
     register_motion(ord('k'), -7)
     register_motion(curses.KEY_UP, -7)
 
-    # operators # TODO: register operators like ('gg' function)
-    # register_operator('gg', operator_goto)
     register_operator('g', operator_goto)
     register_operator('d', operator_delete)
     register_operator('c', operator_change)
 
 
 def init_default_commands():
-    register_command(":w", ui_actions.write)
-    register_command(":write", ui_actions.write)
-    register_command(":q", ui_actions.quit)
-    register_command(":quit", ui_actions.quit)
-    register_command(":wq", ui_actions.write_quit)
-    register_command(":q!", ui_actions.force_quit)
-    register_command(":quit!", ui_actions.force_quit)
-    register_command(":help", ui_actions.show_help)
-    register_command(":undo", ui_actions.undo)
-    register_command(":redo", ui_actions.redo)
-    register_command(":nc", ui_actions.new_subcal)
-    register_command(":dc", ui_actions.delete_subcal)
-    register_command(":color", ui_actions.change_subcal_color)
+    register_command(":w",      ui_actions.write)
+    register_command(":write",  ui_actions.write)
+    register_command(":q",      ui_actions.quit)
+    register_command(":quit",   ui_actions.quit)
+    register_command(":wq",     ui_actions.write_quit)
+    register_command(":q!",     ui_actions.force_quit)
+    register_command(":quit!",  ui_actions.force_quit)
+    register_command(":help",   ui_actions.show_help)
+    register_command(":undo",   ui_actions.undo)
+    register_command(":redo",   ui_actions.redo)
+    register_command(":nc",     ui_actions.new_subcal)
+    register_command(":dc",     ui_actions.delete_subcal)
+    register_command(":color",  ui_actions.change_subcal_color)
 
 
 def init_custom_keys():
@@ -168,11 +166,8 @@ def normal_mode_input(ui, key):
 
     action = KEYMAP.get(key)
     if action:
-        if isinstance(action, str):
-            func = getattr(ui_actions, action, None)
-            if func: func(ui)
-        else:
-            action(ui)
+        action(ui)
+
 
 
 def _apply_operator(ui, key):

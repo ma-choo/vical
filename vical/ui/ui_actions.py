@@ -128,8 +128,7 @@ def new_task(ui):
         ui.msg = ("Task name cannot be blank", 1)
         return
 
-    date_str = f"{selected_date.year}{selected_date.month:02d}{selected_date.day:02d}"
-    ui.selected_subcal.insert_task(Task(name, date_str, 0))
+    ui.selected_subcal.insert_task(Task(name, selected_date, 0))
     ui.msg = (f"Created new task: '{name}'", 0)
     ui.saved = False
     ui.redraw = True
@@ -151,7 +150,6 @@ def yank_task(ui):
 
 
 def delete_task(ui):
-    """Delete current task, store in registers."""
     task = ui.selected_task
     if not task:
         ui.msg = ("No task selected", 1)
@@ -169,7 +167,7 @@ def delete_task(ui):
     entry = (removed.copy(), subcal)
     ui.registers['"'] = entry     # unnamed register
     ui.registers['1'] = entry     # last delete
-    # shift older deletes 1–8 → 2–9
+    # shift older deletes
     for i in range(9, 1, -1):
         ui.registers[str(i)] = ui.registers.get(str(i - 1))
 
@@ -178,7 +176,6 @@ def delete_task(ui):
     ui.redraw = True
     ui.clamp_task_index()
 
-# TODO: these paste functions don't persist, not sure if the issue is with paste or delete
 def paste_task(ui):
     reg = ui.registers['"']
     if not reg:
@@ -189,9 +186,7 @@ def paste_task(ui):
 
     task, original_subcal = reg
     new_task = task.copy()
-    new_task.year = ui.selected_date.year
-    new_task.month = ui.selected_date.month
-    new_task.day = ui.selected_date.day
+    new_task.date = ui.selected_date
 
     target = original_subcal
 
@@ -212,9 +207,7 @@ def paste_task_to_selected_subcal(ui):
 
     task, original_subcal = reg
     new_task = task.copy()
-    new_task.year = ui.selected_date.year
-    new_task.month = ui.selected_date.month
-    new_task.day = ui.selected_date.day
+    new_task.date = ui.selected_date
 
     target = ui.selected_subcal
 

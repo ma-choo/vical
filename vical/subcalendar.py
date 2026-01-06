@@ -8,37 +8,47 @@ DATA_DIR = os.path.expanduser("~/.local/share/vical")
 DATA_FILE = os.path.join(DATA_DIR, "subcalendars.json")
 DATE_FMT = "%Y%m%d"
 
-
+# TODO: pass date directly instead of date_str, convert to string when saving to json
 class Task:
-    def __init__(self, name: str, date_str: str, completed: bool = False):
+    def __init__(self, name: str, tdate: date, completed: bool = False, remind: bool = False):
         self.name = name
-        self.date_str = date_str
-        self.completed = bool(completed)
+        self.completed = completed
+        self.remind = remind
+        self.date = tdate
 
-        self.date: date = datetime.strptime(date_str, DATE_FMT).date()
-        self.year = self.date.year
-        self.month = self.date.month
-        self.day = self.date.day
+    @property
+    def year(self) -> int:
+        return self.date.year
+
+    @property
+    def month(self) -> int:
+        return self.date.month
+
+    @property
+    def day(self) -> int:
+        return self.date.day
 
     def toggle_completed(self):
         self.completed = not self.completed
 
     def copy(self):
-        return Task(self.name, self.date_str, self.completed)
+        return Task(self.name, self.date, self.completed)
 
     def to_dict(self) -> dict:
         return {
             "name": self.name,
-            "date_str": self.date_str,
+            "date": self.date.strftime("%Y%m%d"),
             "completed": self.completed,
+            "remind": self.remind,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "Task":
         return cls(
             name=data["name"],
-            date_str=data["date_str"],
+            tdate=datetime.strptime(data["date"], "%Y%m%d").date(),
             completed=data.get("completed", False),
+            remind=data.get("remind", False)
         )
 
 

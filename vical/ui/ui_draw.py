@@ -3,6 +3,7 @@ import curses
 from datetime import date, timedelta
 from ..utils import get_day_name, get_month_name
 
+
 def update_prompt(ui, text):
     ui.promptwin.erase()
     ui.promptwin.addstr(0, 0, text)
@@ -15,18 +16,19 @@ def draw_help(ui):
     ui.mainwin.erase()
     ui.mainwin.addstr(ui.HELP)
     ui.mainwin.noutrefresh()
-    update_prompt(ui, "Help - press any key to continue")
 
 
 def _draw_prompt_status(ui):
     msg, is_error = ui.msg
     curses.curs_set(0)
 
+
     status_prefix = (
-        f"{'[+]' if not ui.saved else ''}"                 # unsaved marker
+        f"{'[+]' if ui.modified else ''}"                 # unsaved marker
         f"{f'  {ui.operator} ' if ui.operator else ' '}"   # operator
         f"{f'  {ui.count_buffer}' if ui.count_buffer else ''}"           # count
         f"  {ui.last_motion}"                                   # motion
+        f"{f' {ui.saved_change_id[:4]} {ui.change_id[:4]}' if ui.debug else ''}"
         f"{f'  {ui.redraw} {ui.redraw_counter}' if ui.debug else ''}"  # redraw counter
         f"  {'[H]' if ui.selected_subcal.hidden else ''}"  # hidden flag
     )

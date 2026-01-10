@@ -1,20 +1,15 @@
 # vical/ui/ui_input.py
 import curses
+from . import keys
 from . import ui_actions
+from .ui_helpers import keys, handle_key, prompt_getch
 from .ui_draw import update_prompt
 
-SPACE = ord(' ')
-ESC = 27
-CTRL_J = 10
-CTRL_K = 11
-ENTER = {10, 13}
-BACKSPACE = {curses.KEY_BACKSPACE, 127, 8}
 
-
-KEYMAP = {}    # key code -> action
-MOTIONS = {}   # key code -> motion value
-OPERATORS = {} # operator char -> operator handler
-COMMANDS = {}  # string -> function
+KEYMAP = {}
+MOTIONS = {}
+OPERATORS = {}
+COMMANDS = {}
 
 
 def register_key(key, func):
@@ -25,8 +20,8 @@ def register_motion(key, value):
     MOTIONS[key] = value
 
 
-def register_operator(op_char, func):
-    OPERATORS[op_char] = func
+def register_operator(op, func):
+    OPERATORS[op] = func
 
 
 def register_command(name, func):
@@ -34,17 +29,20 @@ def register_command(name, func):
 
 
 def operator_goto(ui, key):
-    if key == ord('g'):
+    k = chr(key)
+    if k == 'g':
         ui_actions.goto(ui)
 
 
 def operator_delete(ui, key):
-    if key == ord('d'):
+    k = chr(key)
+    if k == 'd':
         ui_actions.delete_task(ui)
 
 
 def operator_change(ui, key):
-    if key == ord('w'):
+    k = chr(key)
+    if k == 'w':
         ui_actions.rename_task(ui)
 
 
@@ -59,9 +57,10 @@ def init_default_keys():
     register_key(ord('p'), ui_actions.paste_task)
     register_key(ord('P'), ui_actions.paste_task_to_selected_subcal)
     register_key(ord('z'), ui_actions.hide_subcal)
-    register_key(SPACE, ui_actions.mark_complete)
-    register_key(CTRL_J, ui_actions.scroll_down)
-    register_key(CTRL_K, ui_actions.scroll_up)
+    register_key(keys.SPACE,    ui_actions.mark_complete)
+    register_key(keys.CTRL_J,   ui_actions.scroll_down)
+    register_key(keys.CTRL_K,   ui_actions.scroll_up)
+    register_key(ord('C'), ui_actions.rename_subcal)
     register_key(ord('['), ui_actions.prev_subcal)
     register_key(ord(']'), ui_actions.next_subcal)
 
@@ -86,8 +85,8 @@ def init_default_commands():
     register_command(":q",      ui_actions.quit)
     register_command(":quit",   ui_actions.quit)
     register_command(":wq",     ui_actions.write_quit)
-    register_command(":q!",     ui_actions.force_quit)
-    register_command(":quit!",  ui_actions.force_quit)
+    register_command(":q!",     ui_actions.quit_bang)
+    register_command(":quit!",  ui_actions.quit_bang)
     register_command(":help",   ui_actions.show_help)
     register_command(":undo",   ui_actions.undo)
     register_command(":redo",   ui_actions.redo)
@@ -104,75 +103,52 @@ def init_custom_commands():
     pass # TODO
 
 
-def handle_key(ui):
-    key = ui.stdscr.getch()
-    if key == curses.KEY_RESIZE:
-        ui.handle_resize()
-    
-    return key
-
-
-def prompt_getch(ui):
-    while True:
-        key = handle_key(ui)
-        if key != curses.KEY_RESIZE:
-            return key
-
-
-def prompt_getstr(ui):
-    curses.curs_set(1)
-    string = ''
-
-    while True:
-        update_prompt(ui, string)
-        k = prompt_getch(ui)
-        if k == ESC: break
-        elif k in ENTER: 
-            return string
-            break
-        elif k in BACKSPACE:
-            if len(string) > 1:
-                string = string[:-1]
-        elif 32 <= k <= 126:
-            string += chr(k)
-
-    curses.curs_set(0)
-
-
 def normal_mode_input(ui, key):
+    key_chr = chr(key)
+
     if ord('0') <= key <= ord('9'):
-        ui.count_buffer += chr(key)
+        ui.count_buffer += key_chr
         return
 
-    if chr(key) in OPERATORS:
-        if ui.operator:
-            _apply_operator(ui, key)
-        else:
-            ui.operator = chr(key)
+    # operator sequences
+    if ui.operator:
+        # second key pressed, call the operator handler
+        handler = OPERATORS.get(ui.operator)
+        if handler:
+            handler(ui, key)   # pass the second key as motion
+        ui.operator = ''
         return
 
+    # first key pressed, start operator if it exists
+    if key_chr in OPERATORS:
+        ui.operator = key_chr
+        return
+
+    # command mode
     if key == ord(':'):
         _command_mode_input(ui)
         return
 
-    if key == ESC:
+    if key == keys.ESC:
         ui.operator = ''
         ui.count_buffer = ''
         return
 
+    # motions
     if key in MOTIONS:
         ui_actions.move(ui, MOTIONS[key])
         return
 
+    # normal actions
     action = KEYMAP.get(key)
     if action:
         action(ui)
 
 
-
 def _apply_operator(ui, key):
     handler = OPERATORS.get(ui.operator)
-    if handler: handler(ui, key)
+    if handler:
+        handler(ui, key)   # pass the second key
     ui.operator = ''
 
 
@@ -183,11 +159,11 @@ def _command_mode_input(ui):
     while True:
         update_prompt(ui, command)
         k = prompt_getch(ui)
-        if k == ESC: break
-        elif k in ENTER: 
+        if k == keys.ESC: break
+        elif k in keys.ENTER: 
             _execute_command(ui, command)
             break
-        elif k in BACKSPACE:
+        elif k in keys.BACKSPACE:
             if len(command) > 1:
                 command = command[:-1]
         elif 32 <= k <= 126:

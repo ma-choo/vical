@@ -4,9 +4,10 @@ import json
 from datetime import datetime, date
 from typing import List
 
+
 DATA_DIR = os.path.expanduser("~/.local/share/vical")
 DATA_FILE = os.path.join(DATA_DIR, "subcalendars.json")
-DATE_FMT = "%Y%m%d"
+
 
 # TODO: pass date directly instead of date_str, convert to string when saving to json
 class Task:
@@ -37,18 +38,18 @@ class Task:
     def to_dict(self) -> dict:
         return {
             "name": self.name,
-            "date": self.date.strftime("%Y%m%d"),
             "completed": self.completed,
             "remind": self.remind,
+            "date": self.date.strftime("%Y%m%d")
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "Task":
         return cls(
             name=data["name"],
-            tdate=datetime.strptime(data["date"], "%Y%m%d").date(),
             completed=data.get("completed", False),
-            remind=data.get("remind", False)
+            remind=data.get("remind", False),
+            tdate=datetime.strptime(data["date"], "%Y%m%d").date()
         )
 
 

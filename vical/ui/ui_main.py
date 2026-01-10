@@ -1,10 +1,14 @@
 # vical/ui/ui_main.py
 import curses
 import copy
+import hashlib
+import json
 import time
 from datetime import date
 from .ui_draw import draw_screen
-from .ui_input import init_default_keys, init_default_commands, handle_key, normal_mode_input
+from .ui_helpers import handle_key
+from .ui_input import init_default_keys, init_default_commands, normal_mode_input
+from ..utils import capture_undo_state, compute_change_id
 
 
 class UI:
@@ -36,11 +40,23 @@ class UI:
         self.selected_task_index = 0
         self.task_scroll_offset = 0
 
-        self.saved = True
-        self.last_motion = ''
+        self.last_motion = '0'
         self.count_buffer = ""
         self.operator = ""
-        self.redraw_counter = 0
+
+        self.msg = ("calicula 0.01 - type :help for help or :q for quit", 0)
+        self.HELP = "todo"
+
+        self.selected_date = date.today()
+        self.last_selected_date = self.selected_date
+
+        # history
+        self.MAX_HISTORY = 50
+        self.undo_stack = []
+        self.redo_stack = []
+        initial_state = capture_undo_state(self)
+        self.change_id = compute_change_id(initial_state)
+        self.saved_change_id = self.change_id
 
         self.registers = {
             '"': None,  # unnamed register
@@ -48,48 +64,19 @@ class UI:
             **{chr(c): None for c in range(ord('a'), ord('z') + 1)}  # a-z
         }
 
-        self.history_undo = []
-        self.history_redo = []
-        self.MAX_HISTORY = 50
-        self.last_saved_snapshot = self.snapshot_state()
-
-
-        self.msg = ("calicula 0.01 - type :help for help or :q for quit", 0)
-        self.HELP = "todo"
-
         self.running = True
         self.redraw = True
-        self.debug = True
-
-        self.selected_date = date.today()
-        self.last_selected_date = self.selected_date
+        self.redraw_counter = 0
+        self.debug = False
 
         init_default_keys()
         init_default_commands()
         self.stdscr.refresh()
 
 
-    def snapshot_state(self):
-        return {
-            "subcalendars": copy.deepcopy(self.subcalendars),
-            "selected_subcal_index": self.selected_subcal_index,
-            "selected_task_index": self.selected_task_index,
-        }
-
-
-    def restore_state(self, snapshot):
-        self.subcalendars = copy.deepcopy(snapshot["subcalendars"])
-        self.selected_subcal_index = snapshot["selected_subcal_index"]
-        self.selected_task_index = snapshot["selected_task_index"]
-        self.saved = (snapshot == self.last_saved_snapshot)
-        self.redraw = True
-
-
-    def push_history(self):
-        self.history_undo.append(self.snapshot_state())
-        if len(self.history_undo) > self.MAX_HISTORY:
-            self.history_undo.pop(0)
-        self.history_redo.clear()
+    @property
+    def modified(self) -> bool:
+        return self.change_id != self.saved_change_id
 
 
     def init_color_pairs(self):
@@ -133,6 +120,7 @@ class UI:
         
         curses.flushinp()
         self.stdscr.refresh()
+
 
     def handle_resize(self):
         self.screen_h, self.screen_w = self.stdscr.getmaxyx()

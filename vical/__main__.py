@@ -7,10 +7,11 @@ License: MIT (see LICENSE)
 import curses
 from vical.gui.ui import CursesUI
 from vical.core.editor import Editor
-from vical.input.defaults import register_default_commands
+from vical.input.defaults import register_default_keys, register_default_commands
 
 
 def main(stdscr):
+    register_default_keys()
     register_default_commands()
     editor = Editor()
     ui = CursesUI(stdscr)

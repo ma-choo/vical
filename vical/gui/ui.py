@@ -17,7 +17,7 @@ class CursesUI:
         self.stdscr = stdscr
         self.screen_h, self.screen_w = self.stdscr.getmaxyx()
 
-        # mainwin: 6 rows x 7 columns grid
+        # mainwin: 6 rows x 7 columns calendar grid
         self.mainwin_hfactor = (self.screen_h - 2) // 6
         self.mainwin_wfactor = (self.screen_w - 2) // 7
         self.mainwin_h = self.mainwin_hfactor * 6 + 1

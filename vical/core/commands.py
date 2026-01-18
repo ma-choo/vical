@@ -102,6 +102,10 @@ def show_help(editor):
 
 # ---TASKS---
 def new_task(editor):
+    """:newtask
+
+    Create a new task.
+    """
     selected_date = editor.selected_date
 
     def execute(name):
@@ -143,6 +147,10 @@ def mark_complete(editor):
 
 
 def rename_task(editor):
+    """:renametask
+    
+    Rename the selected task.
+    """
     task = editor.selected_task
     if not task:
         editor.msg = ("No task selected", 1)
@@ -275,6 +283,10 @@ def paste_task_to_selected_subcal(editor):
 
 # ---SUBCALENDARS---
 def new_subcal(editor):
+    """:newcal
+
+    Create a new subcalendar.
+    """
     subcalendars = editor.subcalendars
 
     def execute(name):
@@ -304,6 +316,10 @@ def new_subcal(editor):
 
 
 def rename_subcal(editor):
+    """:renamecal
+
+    Rename the selected subcalendar.
+    """
     subcal = editor.selected_subcal
 
     if not subcal:
@@ -332,6 +348,10 @@ def rename_subcal(editor):
 
 
 def delete_subcal(editor):
+    """:delcal
+
+    Delete the selected subcalendar
+    """
     subcal = editor.selected_subcal
     if not subcal:
         editor.msg = ("No subcalendar selected", 1)
@@ -368,3 +388,35 @@ def hide_subcal(editor):
     subcal.toggle_hidden()
     editor.msg = (f"{subcal.name} {'hidden' if subcal.hidden else 'unhidden'}", 0)
     editor.redraw = True
+
+
+def change_subcal_color(editor):
+    """:color
+
+    Change the selected subcalendar color.
+    """
+    subcal = editor.selected_subcal
+
+    if not subcal:
+        editor.msg = ("No subcalendar selected", 1)
+        return
+
+    def execute(color):
+        if not color.strip():
+            editor.msg = ("No color", 1)
+            return
+        try:
+            with undoable(editor):
+                subcal.color = color
+        except Exception as e:
+            editor.msg = (f"Failed to change subcalendar color: {e}", 1)
+            return
+        editor.msg = (f"Renamed subcalendar '{subcal.name}' color to '{subcal.color}'", 0)
+        editor.redraw = True
+
+    editor.prompt = {
+        "text": "Change subcalendar color: ",
+        "value": "",
+        "on_submit": execute,
+    }
+    editor.mode = Mode.PROMPT

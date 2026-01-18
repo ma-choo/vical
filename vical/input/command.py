@@ -7,11 +7,11 @@ from vical.core import commands
 from vical.core.editor import Mode
 
 
-"""Dict of command names to functions."""
+# dict of command names to functions
 COMMANDS = {}
 
 
-def register(name, func):
+def register_command(name, func):
     """Register a string to a command."""
     COMMANDS[name] = func
 

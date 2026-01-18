@@ -6,36 +6,21 @@ from vical.input import keys
 from vical.core import movement, commands
 
 
-OPERATOR_KEYS = {
-    ord('d'),
-    ord('c'),
-    ord('g'),
-}
+NORMAL_KEYS = {}
+OPERATOR_KEYS = {}
+MOTIONS = {}
 
 
-MOTIONS = {
-    ord('h'): -1,
-    keys.LEFT: -1,
-    ord('l'): 1,
-    keys.RIGHT: 1,
-    ord('k'): -7,
-    keys.UP: -7,
-    ord('j'): 7,
-    keys.DOWN: 7,
-}
+def register_normal_key(key, func):
+    NORMAL_KEYS[key] = func
 
 
-NORMAL_KEYS = {
-    ord('u'): commands.undo,
-    ord('U'): commands.redo,
-    ord('T'): commands.new_task,
-    keys.SPACE: commands.mark_complete,
-    ord('y'): commands.yank_task,
-    ord('p'): commands.paste_task,
-    ord('z'): commands.hide_subcal,
-    ord('['): movement.prev_subcal,
-    ord(']'): movement.next_subcal,
-}
+def register_motion_key(key, delta):
+    MOTIONS[key] = delta
+
+
+def register_operator_key(key, func):
+    OPERATOR_KEYS[key] = func
 
 
 def normal_input(editor, key):

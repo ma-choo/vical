@@ -86,9 +86,9 @@ class Editor:
         for cal in self.subcalendars:
             if cal.hidden:
                 continue
-            for a in cal.tasks:
-                if (a.year, a.month, a.day) == (self.selected_date.year, self.selected_date.month, self.selected_date.day):
-                    tasks.append((cal, a))
+            for t in cal.tasks:
+                if (t.year, t.month, t.day) == (self.selected_date.year, self.selected_date.month, self.selected_date.day):
+                    tasks.append((cal, t))
         return tasks
 
     def clamp_task_index(self):

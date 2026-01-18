@@ -1,10 +1,13 @@
-# This file is part of vical.
-# License: MIT (see LICENSE)
+"""
+main.py - Main entry point.
+This file is part of vical.
+License: MIT (see LICENSE)
+"""
 
 import curses
 from vical.gui.ui import CursesUI
 from vical.core.editor import Editor
-from vical.config.defaults import register_default_commands
+from vical.input.defaults import register_default_commands
 
 
 def main(stdscr):

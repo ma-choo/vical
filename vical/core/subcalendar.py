@@ -56,7 +56,7 @@ class Task:
 
 
 class Subcalendar:
-    def __init__(self, name: str, color: int = 1, hidden: bool = False):
+    def __init__(self, name: str, color: str = "green", hidden: bool = False):
         self.name = name
         self.color = color
         self.hidden = hidden
@@ -81,7 +81,7 @@ class Subcalendar:
     def rename(self, new_name: str):
         self.name = new_name
 
-    def change_color(self, color: int):
+    def change_color(self, color: str):
         self.color = color
 
     def to_dict(self) -> dict:
@@ -96,7 +96,7 @@ class Subcalendar:
     def from_dict(cls, data: dict) -> "Subcalendar":
         subcal = cls(
             name=data["name"],
-            color=data.get("color", 1),
+            color=data.get("color", "green"),
             hidden=data.get("hidden", False),
         )
 

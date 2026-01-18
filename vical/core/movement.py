@@ -52,6 +52,22 @@ def goto(editor):
         editor.msg = (f"Invalid date: {date_str}", 1)
 
 
+def left(editor):
+    move(editor, -1)
+
+
+def right(editor):
+    move(editor, 1)
+
+
+def up(editor):
+    move(editor, -7)
+
+
+def down(editor):
+    move(editor, 7)
+
+
 def visual_down(editor):
     tasks = editor.get_tasks_for_selected_day()
     if not tasks:

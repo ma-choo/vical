@@ -1,3 +1,9 @@
+"""
+prompt.py - Prompt mode input handling
+This file is part of vical.
+License: MIT (see LICENSE)
+"""
+
 import curses
 from vical.input import keys
 from vical.core.editor import Mode

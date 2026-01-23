@@ -11,13 +11,15 @@ from vical.input.command import register_command
 
 
 def register_default_keys():
-    register_normal_key(ord('u'), commands.undo)
-    register_normal_key(ord('U'), commands.redo)
-    register_normal_key(ord('T'), commands.new_task)
+    register_normal_key(ord('u'),   commands.undo)
+    register_normal_key(ord('U'),   commands.redo)
+    register_normal_key(ord('T'),   commands.new_task)
     register_normal_key(keys.SPACE, commands.mark_complete)
-    register_normal_key(ord('y'), commands.yank_task)
-    register_normal_key(ord('p'), commands.paste_task)
-    register_normal_key(ord('z'), commands.hide_subcal)
+    register_normal_key(ord('y'),   commands.yank_task)
+    register_normal_key(ord('p'),   commands.paste_task)
+    register_normal_key(ord('z'),   commands.hide_subcal)
+    register_normal_key(ord('['),   commands.prev_subcal)
+    register_normal_key(ord(']'),   commands.next_subcal)
 
     # motions
     register_motion_key(ord('h'), -1)
@@ -36,29 +38,29 @@ def register_default_keys():
 
 
 def register_default_commands():
-    register_command("q", commands.quit)
-    register_command("quit", commands.quit)
+    register_command("q",           commands.quit)
+    register_command("quit",        commands.quit)
 
-    register_command("q!", commands.quit_bang)
-    register_command("quit!", commands.quit_bang)
+    register_command("q!",          commands.quit_bang)
+    register_command("quit!",       commands.quit_bang)
 
-    register_command("w", commands.write)
-    register_command("write", commands.write)
+    register_command("w",           commands.write)
+    register_command("write",       commands.write)
 
-    register_command("wq", commands.write_quit)
-    register_command("writequit", commands.write_quit)
+    register_command("wq",          commands.write_quit)
+    register_command("writequit",   commands.write_quit)
 
-    register_command("undo", commands.undo)
-    register_command("redo", commands.redo)
-    register_command("help", commands.show_help)
+    register_command("undo",        commands.undo)
+    register_command("redo",        commands.redo)
+    register_command("help",        commands.show_help)
 
-    register_command("newtask", commands.new_task)
-    register_command("complete", commands.mark_complete)
-    register_command("renametask", commands.rename_task)
-    register_command("deltask", commands.delete_task)
+    register_command("newtask",     commands.new_task)
+    register_command("complete",    commands.mark_complete)
+    register_command("renametask",  commands.rename_task)
+    register_command("deltask",     commands.delete_task)
 
-    register_command("newcal", commands.new_subcal)
-    register_command("renamecal", commands.rename_subcal)
-    register_command("delcal", commands.delete_task)
-    register_command("hide", commands.hide_subcal)
-    register_command("color", commands.change_subcal_color)
+    register_command("newcal",      commands.new_subcal)
+    register_command("renamecal",   commands.rename_subcal)
+    register_command("delcal",      commands.delete_task)
+    register_command("hide",        commands.hide_subcal)
+    register_command("color",       commands.change_subcal_color)

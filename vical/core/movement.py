@@ -6,16 +6,9 @@ from datetime import date, timedelta
 
 
 def move(editor, motion):
-    """
-    Move motion amount of days, use count as a multiplier
-    """
     count = int(editor.count) if editor.count else 1
     new_date = editor.selected_date + timedelta(days=motion * count)
-
-    try:
-        editor.change_date(new_date, motion * count)
-    except Exception as e:
-        editor.msg = (f"{e}", 1)
+    editor.change_date(new_date, motion * count)
 
 
 def goto(editor):
@@ -68,40 +61,42 @@ def down(editor):
     move(editor, 7)
 
 
-def visual_down(editor):
-    tasks = editor.get_tasks_for_selected_day()
-    if not tasks:
-        return
+def visual_left(editor):
+    new_date = editor.selected_date - timedelta(days=1)
+    editor.set_date(new_date, reset_tasks=False)
+    editor.clamp_task_index()
+    editor.ensure_visible()
 
-    max_visible = self.mainwin_hfactor - 2
-    editor.selected_task_index = min(editor.selected_task_index + 1, len(tasks) - 1)
-    if editor.selected_task_index >= editor.task_scroll_offset + max_visible:
-        self.task_scroll_offset += 1
+
+def visual_right(editor):
+    new_date = editor.selected_date + timedelta(days=1)
+    editor.set_date(new_date, reset_tasks=False)
+    editor.clamp_task_index()
+    editor.ensure_visible()
 
 
 def visual_up(editor):
+    if editor.selected_task_index > 0:
+        editor.selected_task_index -= 1
+        editor.ensure_visible()
+        return
+
+    new_date = editor.selected_date - timedelta(days=7)
+    editor.set_date(new_date, reset_tasks=True)
+
+    # jump to bottom if tasks exist
+    editor.selected_task_index = editor.max_task_index()
+    editor.ensure_visible()
+
+    
+def visual_down(editor):
     tasks = editor.get_tasks_for_selected_day()
-    if not tasks:
+
+    if editor.selected_task_index < len(tasks) - 1:
+        editor.selected_task_index += 1
+        editor.ensure_visible()
         return
 
-    editor.selected_task_index = max(editor.selected_task_index - 1, 0)
-    if editor.selected_task_index < self.task_scroll_offset:
-        self.task_scroll_offset = editor.selected_task_index
-
-
-def next_subcal(editor):
-    """
-    Cycle subcalendar selection forward.
-    """
-    if not editor.subcalendars:
-        return
-    editor.selected_subcal_index = (editor.selected_subcal_index + 1) % len(editor.subcalendars)
-
-
-def prev_subcal(editor):
-    """
-    Cycle subcalendar selection backward.
-    """
-    if not editor.subcalendars:
-        return
-    editor.selected_subcal_index = (editor.selected_subcal_index - 1) % len(editor.subcalendars)
+    # cross week boundary
+    new_date = editor.selected_date + timedelta(days=7)
+    editor.set_date(new_date, reset_tasks=True)

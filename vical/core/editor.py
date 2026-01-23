@@ -28,13 +28,14 @@ class Editor:
         self.operator = ""
         self.count = ""
         self.last_motion = '0'
-        self.msg = ("calicula 0.01 - type :help for help or :q to quit", 0)
+        self.msg = ("vical 0.01 - type :help for help or :q to quit", 0)
 
         self.selected_date = date.today()
         self.last_selected_date = self.selected_date
         self.selected_subcal_index = 0
         self.selected_task_index = 0
         self.task_scroll_offset = 0
+        self.max_tasks_visible = 0
 
         initial_state = capture_state(self)
         self.state_id = compute_state_id(self)
@@ -100,18 +101,37 @@ class Editor:
             self.selected_task_index = 0
             self.task_scroll_offset = 0
 
-    def change_date(self, new_date, motion=0):
+    def set_date(self, new_date, *, reset_tasks: bool):
         if self.month_has_changed(new_date):
             self.redraw = True
 
         self.last_selected_date = self.selected_date
         self.selected_date = new_date
-        self.selected_task_index = 0
-        self.task_scroll_offset = 0
-        self.clamp_task_index()
 
+        if reset_tasks:
+            self.selected_task_index = 0
+            self.task_scroll_offset = 0
+        else:
+            self.clamp_task_index()
+
+    def change_date(self, new_date, motion=0):
+        self.set_date(new_date, reset_tasks=True)
         self.last_motion = f"{'+' if motion > 0 else ''}{motion}"
         self.count = ""
+
+    def tasks_for_date(self, d):
+        return self.get_tasks_for_day(d.year, d.month, d.day)
+
+    def max_task_index(self):
+        return max(0, len(self.get_tasks_for_selected_day()) - 1)
+
+    def ensure_visible(self):
+        if self.selected_task_index < self.task_scroll_offset:
+            self.task_scroll_offset = self.selected_task_index
+        elif self.selected_task_index >= self.task_scroll_offset + self.max_tasks_visible:
+            self.task_scroll_offset = (
+                self.selected_task_index - self.max_tasks_visible + 1
+            )
 
     def month_has_changed(self, new_date):
         return (new_date.month != self.selected_date.month) or (new_date.year != self.selected_date.year)

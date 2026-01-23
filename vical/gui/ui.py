@@ -33,7 +33,7 @@ class CursesUI:
 
         self.theme = ThemeManager(self.stdscr)
 
-        self.redraw = True
+        self.layout_update = True
 
         self.init_windows()
         self.stdscr.refresh()
@@ -68,9 +68,15 @@ class CursesUI:
         curses.flushinp()
         self.redraw = True
 
+    def _update_editor_layout(self, editor):
+        editor.max_tasks_visible = max(0, self.mainwin_hfactor - 2)
+        editor.redraw = True
+
     def main(self, editor):
         try:
             while True:
+                if self.layout_update:
+                    self._update_editor_layout(editor)
                 draw_screen(self, editor, self.theme)
                 key = keys.handle_key(self)
                 match editor.mode:

@@ -43,7 +43,11 @@ def _operator_goto(editor, key):
     # gg - goto
     if key == ord('g'):
         movement.goto(editor)
-    if key == ord('j'):
-        movement.visual_down
+    if key == ord('h'):
+        movement.visual_left(editor)
+    if key == ord('l'):
+        movement.visual_right(editor)
     if key == ord('k'):
-        movement.visual_up
+        movement.visual_up(editor)
+    if key == ord('j'):
+        movement.visual_down(editor)

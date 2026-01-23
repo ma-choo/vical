@@ -7,11 +7,19 @@ from datetime import date, timedelta
 from vical.core.editor import Mode
 
 
-def _get_day_name(index: int) -> str:
-    return calendar.day_abbr[(index + 6) % 7]  # shift so sunday = 0
+def _attron(win, theme, color):
+    win.attron(curses.color_pair(theme.pair(color)))
 
 
-def _get_month_name(month: int) -> str:
+def _attroff(win, theme, color):
+    win.attroff(curses.color_pair(theme.pair(color)))
+
+
+def _get_day_name(day):
+    return calendar.day_abbr[(day + 6) % 7]  # shift so sunday = 0
+
+
+def _get_month_name(month):
     if 1 <= month <= 12:
         return calendar.month_abbr[month]
     raise ValueError(f"Invalid month number: {month}")
@@ -25,6 +33,9 @@ def update_promptwin(ui, text):
 
 
 def _draw_prompt_status(ui, editor, theme):
+    """
+    Draw prompt status line
+    """
     msg, is_error = editor.msg
     curses.curs_set(0)
 
@@ -48,9 +59,9 @@ def _draw_prompt_status(ui, editor, theme):
             ui.promptwin.addstr(0, 0, editor.selected_task.name)
         else:
             if is_error:
-                ui.promptwin.attron(curses.color_pair(theme.pair("ERROR")))
+                _attron(ui.promptwin, theme, "error")
                 ui.promptwin.addstr(0, 0, f"ERROR: {msg}")
-                ui.promptwin.attroff(curses.color_pair(theme.pair("ERROR")))
+                _attroff(ui.promptwin, theme, "error")
             else:
                 ui.promptwin.addstr(0, 0, msg)
 
@@ -59,17 +70,21 @@ def _draw_prompt_status(ui, editor, theme):
         ui.promptwin.addstr(0, right_x, status_prefix)
 
         # draw subcalendar name in its color
-        ui.promptwin.attron(curses.color_pair(theme.subcal_pair(editor.selected_subcal.color)))
+        _attron(ui.promptwin, theme, editor.selected_subcal.color)
         ui.promptwin.addstr(0, right_x + len(status_prefix), subcal_name)
-        ui.promptwin.attroff(curses.color_pair(theme.subcal_pair(editor.selected_subcal.color)))
+        _attroff(ui.promptwin, theme, editor.selected_subcal.color)
 
     except Exception as e:
-        ui.promptwin.attron(curses.color_pair(theme.pair("ERROR")))
+        _attron(ui.promptwin, theme, "error")
         ui.promptwin.addstr(0, 0, f"ERROR: {e}")
-        ui.promptwin.attroff(curses.color_pair(theme.pair("ERROR")))
+        _attroff(ui.promptwin, theme, "error")
 
 
 def _draw_calendar_base(ui, editor):
+    """
+    Draw static calendar elements
+    (grid lines, day headers, month footer).
+    """
     ui.mainwin.erase()
 
     # grid lines
@@ -97,6 +112,9 @@ def _draw_calendar_base(ui, editor):
 
 
 def _draw_day_cell(ui, editor, cell_date, theme):
+    """
+    Draw a single day cell with tasks and selection/current date highlights.
+    """
     today = date.today()
     selected = editor.selected_date
 
@@ -110,24 +128,22 @@ def _draw_day_cell(ui, editor, cell_date, theme):
     cell_w = ui.mainwin_wfactor - 1
     cell_h = ui.mainwin_hfactor - 1
 
-    # clear cell area
+    # 1. clear cell area
     for r in range(cell_h):
         try:
             ui.mainwin.addstr(pos_y + r, pos_x, " " * cell_w)
         except curses.error:
             pass
 
-    # day numbers
+    # 2. draw day numbers
     attr = 0
-    # dim day numbers outside selected month
     if cell_date.month != selected.month:
-        attr |= curses.color_pair(theme.pair("DIM"))
+        attr |= curses.color_pair(theme.pair("dim")) # dim day numbers outside selected month
     else:
         if cell_date == today:
-            attr |= curses.color_pair(theme.pair("TODAY"))
+            attr |= curses.color_pair(theme.pair("today")) # highlight current date
         if cell_date == selected:
-            attr |= curses.A_REVERSE
-
+            attr |= curses.A_REVERSE # highlight selected date
     try:
         ui.mainwin.attron(attr)
         ui.mainwin.addstr(pos_y, pos_x, f"{cell_date.day:>{cell_w}}")
@@ -135,14 +151,14 @@ def _draw_day_cell(ui, editor, cell_date, theme):
     except curses.error:
         pass
 
-    # tasks
+    # 3. draw tasks
     max_per_day = ui.mainwin_hfactor - 2
     tasks = []
     for cal in editor.subcalendars:
         if cal.hidden:
             continue
         for t in cal.tasks:
-            if t.date == cell_date:  # assume Subcalendar task has a date property
+            if t.date == cell_date:
                 tasks.append((cal, t))
 
     scroll_offset = editor.task_scroll_offset if cell_date == selected else 0
@@ -151,10 +167,10 @@ def _draw_day_cell(ui, editor, cell_date, theme):
 
     for i, (cal, t) in enumerate(visible):
         y = base_y + i
-        attr = curses.color_pair(theme.subcal_pair(cal.color))
+        attr = curses.color_pair(theme.pair(cal.color)) # color the task with its subcalendar color
         text = f"{'✓ ' if t.completed else ''}{t.name[:cell_w - (2 if t.completed else 0)]}"
         if cell_date == selected and (scroll_offset + i) == selected_index:
-            attr |= curses.A_REVERSE
+            attr |= curses.A_REVERSE # highlight selected task
 
         try:
             ui.mainwin.attron(attr)
@@ -163,7 +179,7 @@ def _draw_day_cell(ui, editor, cell_date, theme):
         except curses.error:
             pass
 
-    # scroll indicators
+    # 4. draw scroll indicators
     try:
         if scroll_offset > 0:
             ui.mainwin.addstr(base_y, arrow_x, "▲")
@@ -189,7 +205,7 @@ def _draw_full_grid(ui, editor, theme):
 
 
 def draw_screen(ui, editor, theme):
-    if editor.redraw or ui.redraw:
+    if editor.redraw:
         _draw_full_grid(ui, editor, theme)
         editor.redraw_counter += 1
         ui.stdscr.refresh()

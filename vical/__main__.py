@@ -1,9 +1,6 @@
-"""
-main.py - Main entry point.
-This file is part of vical.
-License: MIT (see LICENSE)
-"""
-
+# main.py - Main program entry point.
+# This file is part of vical.
+# License: MIT (see LICENSE)
 import curses
 from vical.gui.ui import CursesUI
 from vical.core.editor import Editor

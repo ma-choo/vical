@@ -294,7 +294,7 @@ def new_subcal(editor):
             editor.msg = ("Subcalendar name cannot be blank", 1)
             return
 
-        subcal = Subcalendar(name, 1)
+        subcal = Subcalendar(name)
 
         try:
             with undoable(editor):
@@ -420,3 +420,21 @@ def change_subcal_color(editor):
         "on_submit": execute,
     }
     editor.mode = Mode.PROMPT
+
+
+def next_subcal(editor):
+    """
+    Cycle subcalendar selection forward.
+    """
+    if not editor.subcalendars:
+        return
+    editor.selected_subcal_index = (editor.selected_subcal_index + 1) % len(editor.subcalendars)
+
+
+def prev_subcal(editor):
+    """
+    Cycle subcalendar selection backward.
+    """
+    if not editor.subcalendars:
+        return
+    editor.selected_subcal_index = (editor.selected_subcal_index - 1) % len(editor.subcalendars)

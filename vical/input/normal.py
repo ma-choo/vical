@@ -1,3 +1,4 @@
+# normal.py - Normal mode input
 # This file is part of vical.
 # License: MIT (see LICENSE)
 
@@ -6,21 +7,21 @@ from vical.input import keys
 from vical.core import movement, commands
 
 
-NORMAL_KEYS = {}
 OPERATOR_KEYS = {}
 MOTIONS = {}
+NORMAL_KEYS = {}
 
 
-def register_normal_key(key, func):
-    NORMAL_KEYS[key] = func
+def register_operator_key(key, func):
+    OPERATOR_KEYS[key] = func
 
 
 def register_motion_key(key, delta):
     MOTIONS[key] = delta
 
 
-def register_operator_key(key, func):
-    OPERATOR_KEYS[key] = func
+def register_normal_key(key, func):
+    NORMAL_KEYS[key] = func
 
 
 def normal_input(editor, key):

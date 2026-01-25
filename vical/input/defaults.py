@@ -1,5 +1,5 @@
 """
-defaults.py - default keybindings
+defaults.py - Default keybindings and commands.
 This file is part of vical.
 License: MIT (see LICENSE)
 """

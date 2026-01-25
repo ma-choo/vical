@@ -1,6 +1,7 @@
 # config.py - Theme config loader.
 # This file is part of Vical.
 # License: MIT (see LICENSE)
+
 import os
 import configparser
 

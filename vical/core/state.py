@@ -1,3 +1,4 @@
+# state.py - Editor state capture and undo/redo support.
 # This file is part of vical.
 # License: MIT (see LICENSE)
 

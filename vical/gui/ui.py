@@ -1,3 +1,4 @@
+# ui.py - Curses UI instance.
 # This file is part of vical.
 # License: MIT (see LICENSE)
 
@@ -13,22 +14,35 @@ from vical.gui.draw import draw_screen
 
 
 class CursesUI:
+    CAL_ROWS = 6
+    CAL_COLS = 7
+    PROMPT_ROWS = 1
+    CAL_BORDERS = 2
+
     def __init__(self, stdscr):
         self.stdscr = stdscr
         self.screen_h, self.screen_w = self.stdscr.getmaxyx()
 
-        # mainwin: 6 rows x 7 columns calendar grid
-        self.mainwin_hfactor = (self.screen_h - 2) // 6
-        self.mainwin_wfactor = (self.screen_w - 2) // 7
-        self.mainwin_h = self.mainwin_hfactor * 6 + 1
-        self.mainwin_w = self.mainwin_wfactor * 7 + 1
+        # mainwin - 6x7 calendar grid
+        # subtract prompt row and curses box() borders to get usable mainwin space
+        usable_h = self.screen_h - self.PROMPT_ROWS - self.CAL_BORDERS
+        usable_w = self.screen_w - self.CAL_BORDERS
+
+        # calculate height and width factors for drawing calendar grid and day cells
+        self.mainwin_hfactor = max(1, usable_h // self.CAL_ROWS)
+        self.mainwin_wfactor = max(1, usable_w // self.CAL_COLS)
+
+        # calculate total mainwin dimensions from height and width factors
+        # +1 to restore the right and bottom borders
+        self.mainwin_h = self.mainwin_hfactor * self.CAL_ROWS + 1
+        self.mainwin_w = self.mainwin_wfactor * self.CAL_COLS + 1
         self.mainwin_y = 0
         self.mainwin_x = 0
 
-        # prompt line
-        self.promptwin_h = 1
+        # promptwin - single full-width line at the bottom of the screen
+        self.promptwin_h = self.PROMPT_ROWS
         self.promptwin_w = self.screen_w
-        self.promptwin_y = self.mainwin_h
+        self.promptwin_y = self.mainwin_h # under mainwin
         self.promptwin_x = 0
 
         self.theme = ThemeManager(self.stdscr)
@@ -42,7 +56,7 @@ class CursesUI:
         self.mainwin = curses.newwin(self.mainwin_h, self.mainwin_w, self.mainwin_y, self.mainwin_x)
         self.promptwin = curses.newwin(self.promptwin_h, self.promptwin_w, self.promptwin_y, self.promptwin_x)
 
-    def handle_resize(self):
+    def handle_resize(self): # TODO: remove magic numbers from here
         self.screen_h, self.screen_w = self.stdscr.getmaxyx()
 
         # recalc mainwin
@@ -52,7 +66,7 @@ class CursesUI:
         self.mainwin_w = self.mainwin_wfactor * 7 + 1
 
         # recalc promptwin
-        self.promptwin_y = min(self.mainwin_h, self.screen_h - 1)
+        self.promptwin_y = min(self.mainwin_h, self.screen_h - self.PROMPT_ROWS)
         self.promptwin_w = self.screen_w
         self.promptwin_h = 1
         self.promptwin_x = 0
@@ -69,7 +83,7 @@ class CursesUI:
         self.redraw = True
 
     def _update_editor_layout(self, editor):
-        editor.max_tasks_visible = max(0, self.mainwin_hfactor - 2)
+        editor.max_tasks_visible = max(0, self.mainwin_hfactor - self.CAL_BORDERS)
         editor.redraw = True
 
     def main(self, editor):

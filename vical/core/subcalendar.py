@@ -1,3 +1,4 @@
+# subcalendar.py - Subcalendar and task objects
 # This file is part of vical.
 # License: MIT (see LICENSE)
 
@@ -11,7 +12,6 @@ DATA_DIR = os.path.expanduser("~/.local/share/vical")
 DATA_FILE = os.path.join(DATA_DIR, "subcalendars.json")
 
 
-# TODO: pass date directly instead of date_str, convert to string when saving to json
 class Task:
     def __init__(self, name: str, tdate: date, completed: bool = False, remind: bool = False):
         self.name = name

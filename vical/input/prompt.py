@@ -1,8 +1,6 @@
-"""
-prompt.py - Prompt mode input handling
-This file is part of vical.
-License: MIT (see LICENSE)
-"""
+# prompt.py - Prompt mode input handling
+# This file is part of vical.
+# License: MIT (see LICENSE)
 
 import curses
 from vical.input import keys
@@ -13,7 +11,7 @@ from vical.gui.draw import update_promptwin
 def prompt_input(ui, editor, key):
         curses.curs_set(1)
         prompt = editor.prompt
-        update_promptwin(ui, prompt["text"] + prompt["value"])
+        update_promptwin(ui, prompt["label"] + prompt["user_input"])
 
         if key == keys.ESC:
             curses.curs_set(0)
@@ -24,14 +22,14 @@ def prompt_input(ui, editor, key):
 
         if key in keys.ENTER:
             curses.curs_set(0)
-            text = prompt["value"]
+            user_input = prompt["user_input"]
             editor.mode = Mode.NORMAL
             editor.prompt = None
-            prompt["on_submit"](text)
+            prompt["on_submit"](user_input)
             editor.redraw = True
             return
 
         if key in keys.BACKSPACE:
-            prompt["value"] = prompt["value"][:-1]
+            prompt["user_input"] = prompt["user_input"][:-1]
         elif 32 <= key <= 126:
-            prompt["value"] += chr(key)
+            prompt["user_input"] += chr(key)

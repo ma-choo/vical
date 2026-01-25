@@ -1,6 +1,7 @@
 # manager.py - Color theme manager.
 # This file is part of Vical.
 # License: MIT (see LICENSE)
+
 import curses
 from vical.theme.config import ConfigLoader
 
@@ -36,13 +37,27 @@ class ThemeManager:
         self.colors = dict(STANDARD_COLORS)
         self._extended_colors = {}
 
-        # name -> curses pair number
         self.pairs = {}
 
         self._next_pair = 1
         self._init_pairs()
 
+    @staticmethod
+    def _hex_to_rgb(hex_str):
+        """
+        Convert hex to curses rgb
+        """
+        r = int(hex_str[1:3], 16) * 1000 // 255
+        g = int(hex_str[3:5], 16) * 1000 // 255
+        b = int(hex_str[5:7], 16) * 1000 // 255
+        return r, g, b
+
     def _resolve_color(self, name):
+        """
+        Resolve a color name or hex value to a curses color index.
+        Supports config overrides, standard curses colors, and on-the-fly allocation
+        of extended colors when the terminal allows color redefinition.
+        """
         if not isinstance(name, str):
             return STANDARD_COLORS["default"]
 
@@ -67,17 +82,12 @@ class ThemeManager:
 
         return STANDARD_COLORS.get(val, STANDARD_COLORS["default"])
 
-    @staticmethod
-    def _hex_to_rgb(hex_str):
-        """
-        Convert hex to curses rgb
-        """
-        r = int(hex_str[1:3], 16) * 1000 // 255
-        g = int(hex_str[3:5], 16) * 1000 // 255
-        b = int(hex_str[5:7], 16) * 1000 // 255
-        return r, g, b
-
     def _alloc_pair(self, fg, bg="default"):
+        """
+        Allocate and initialize a new curses color pair.
+        Resolves foreground and background colors, assigns a unique pair ID,
+        and falls back to defaults if the terminal rejects the definition.
+        """
         fg_idx = self._resolve_color(fg)
         bg_idx = self._resolve_color(bg)
 
@@ -96,6 +106,11 @@ class ThemeManager:
         return pair
 
     def _init_pairs(self):
+        """
+        Initialize all predefined semantic color pairs.
+        Loads pair definitions from config with defaults and registers them
+        for later lookup by semantic name.
+        """
         for name, default_def in DEFAULT_PAIRS.items():
             pair_def = self.config.get_pair(name) or default_def
             parts = [p.strip() for p in pair_def.split(",")]
@@ -108,9 +123,8 @@ class ThemeManager:
     def pair(self, name):
         """
         Return a curses color pair.
-
-        - Semantic name -> predefined pair
-        - Color name / hex -> fg on default bg
+        Semantic name returns a predefined pair.
+        Color name or hex returns fg on default bg.
         """
         if not isinstance(name, str):
             name = "default"

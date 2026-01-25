@@ -1,3 +1,4 @@
+# commands.py - Editor commands.
 # This file is part of vical.
 # License: MIT (see LICENSE)
 
@@ -104,7 +105,7 @@ def show_help(editor):
 def new_task(editor):
     """:newtask
 
-    Create a new task.
+    Create a new task on the currently selected date within the currently selected subcalendar.
     """
     selected_date = editor.selected_date
 
@@ -113,9 +114,11 @@ def new_task(editor):
             editor.msg = ("Task name cannot be blank", 1)
             return
 
+        new_task = Task(name, selected_date, 0)
+
         try:
             with undoable(editor):
-                editor.selected_subcal.insert_task(Task(name, selected_date, 0))
+                editor.selected_subcal.insert_task(new_task)
         except Exception as e:
             editor.msg = (f"Failed to create task '{name}': {e}", 1)
             return
@@ -124,8 +127,8 @@ def new_task(editor):
         editor.redraw = True
 
     editor.prompt = {
-        "text": "Enter task name: ",
-        "value": "",
+        "label": "Enter task name: ",
+        "user_input": "",
         "on_submit": execute,
         "on_cancel": None,
     }
@@ -170,8 +173,8 @@ def rename_task(editor):
         editor.redraw = True
 
     editor.prompt = {
-        "text": "Rename task: ",
-        "value": task.name,
+        "label": "Rename task: ",
+        "user_input": task.name,
         "on_submit": execute,
         "on_cancel": None,
     }
@@ -201,7 +204,7 @@ def delete_task(editor):
     entry = (removed.copy(), subcal)
     editor.registers['"'] = entry     # unnamed register
     editor.registers['1'] = entry     # last delete
-    # shift older deletes
+    # shift older deletes # TODO this stuff should be handled in an editor.add_to_register function.
     for i in range(9, 1, -1):
         editor.registers[str(i)] = editor.registers.get(str(i - 1))
 
@@ -294,11 +297,11 @@ def new_subcal(editor):
             editor.msg = ("Subcalendar name cannot be blank", 1)
             return
 
-        subcal = Subcalendar(name)
+        new_subcal = Subcalendar(name)
 
         try:
             with undoable(editor):
-                subcalendars.append(subcal)
+                subcalendars.append(new_subcal)
         except Exception as e:
             editor.msg = (f"Failed to create subcalendar '{name}': {e}", 1)
             return
@@ -307,10 +310,10 @@ def new_subcal(editor):
         editor.redraw = True
 
     editor.prompt = {
-        "text": "Enter subcalendar name: ",
-        "value": "",
+        "label": "Enter subcalendar name: ",
+        "user_input": "",
         "on_submit": execute,
-        "on_cancel": lambda: _cancel(editor),
+        # "on_cancel": lambda: _cancel(editor),
     }
     editor.mode = Mode.PROMPT
 
@@ -340,8 +343,8 @@ def rename_subcal(editor):
         editor.redraw = True
 
     editor.prompt = {
-        "text": "Rename subcalendar: ",
-        "value": subcal.name,
+        "label": "Rename subcalendar: ",
+        "user_input": subcal.name,
         "on_submit": execute,
     }
     editor.mode = Mode.PROMPT
@@ -372,8 +375,8 @@ def delete_subcal(editor):
         editor.selected_subcal_index = max(0, editor.selected_subcal_index - 1)
 
     editor.prompt = {
-        "text": f"Delete subcalendar '{subcal.name}'? (y/N): ",
-        "value": "",
+        "label": f"Delete subcalendar '{subcal.name}'? (y/N): ",
+        "user_input": "",
         "on_submit": confirm_delete,
     }
     editor.mode = Mode.PROMPT
@@ -411,12 +414,12 @@ def change_subcal_color(editor):
         except Exception as e:
             editor.msg = (f"Failed to change subcalendar color: {e}", 1)
             return
-        editor.msg = (f"Renamed subcalendar '{subcal.name}' color to '{subcal.color}'", 0)
+        editor.msg = (f"Changed subcalendar '{subcal.name}' color to '{subcal.color}'", 0)
         editor.redraw = True
 
     editor.prompt = {
-        "text": "Change subcalendar color: ",
-        "value": "",
+        "label": "Change subcalendar color: ",
+        "user_input": "",
         "on_submit": execute,
     }
     editor.mode = Mode.PROMPT

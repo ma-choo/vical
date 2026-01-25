@@ -1,3 +1,4 @@
+# operator.py - Operator-pending mode input.
 # This file is part of vical.
 # License: MIT (see LICENSE)
 

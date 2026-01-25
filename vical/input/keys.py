@@ -1,3 +1,4 @@
+# keys.py - Key helpers.
 # This file is part of vical.
 # License: MIT (see LICENSE)
 

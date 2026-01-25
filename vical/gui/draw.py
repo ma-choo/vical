@@ -1,3 +1,4 @@
+# draw.py - Calendar and prompt line drawing functions for Curses UI instance.
 # This file is part of vical.
 # License: MIT (see LICENSE)
 
@@ -34,11 +35,11 @@ def update_promptwin(ui, text):
 
 def _draw_prompt_status(ui, editor, theme):
     """
-    Draw prompt status line
+    Draw prompt/status line
     """
     msg, is_error = editor.msg
     curses.curs_set(0)
-
+    # build the status line
     status_prefix = (
         f"{'[+]' if editor.modified else ''}"
         f"{f'  {editor.operator} ' if editor.operator else ' '}"
@@ -87,14 +88,14 @@ def _draw_calendar_base(ui, editor):
     """
     ui.mainwin.erase()
 
-    # grid lines
+    # grid lines (6x7 rows/columns)
     for y in range(1, 6):
         ui.mainwin.hline(ui.mainwin_hfactor * y, 0, curses.ACS_HLINE, ui.mainwin_w)
     for x in range(1, 7):
         ui.mainwin.vline(0, ui.mainwin_wfactor * x, curses.ACS_VLINE, ui.mainwin_h)
     ui.mainwin.box()
 
-    # day headers
+    # day name headers
     for x in range(7):
         try:
             ui.mainwin.addstr(0, x * ui.mainwin_wfactor + 1,
@@ -102,7 +103,7 @@ def _draw_calendar_base(ui, editor):
         except curses.error:
             pass
 
-    # month footer
+    # month footer with month name and year
     footer_str = f"{_get_month_name(editor.selected_date.month)}-{editor.selected_date.year}"
     footer_x = max(0, ui.mainwin_w - 2 - len(footer_str))
     try:
@@ -113,7 +114,11 @@ def _draw_calendar_base(ui, editor):
 
 def _draw_day_cell(ui, editor, cell_date, theme):
     """
-    Draw a single day cell with tasks and selection/current date highlights.
+    Draw a single day cell with
+    - day numbers
+    - current date and date selection
+    - tasks and task selection
+    - scroll inidicators
     """
     today = date.today()
     selected = editor.selected_date
@@ -146,7 +151,7 @@ def _draw_day_cell(ui, editor, cell_date, theme):
             attr |= curses.A_REVERSE # highlight selected date
     try:
         ui.mainwin.attron(attr)
-        ui.mainwin.addstr(pos_y, pos_x, f"{cell_date.day:>{cell_w}}")
+        ui.mainwin.addstr(pos_y, pos_x, f"{cell_date.day:>{cell_w}}") # draw day number at top right corner of day cell
         ui.mainwin.attroff(attr)
     except curses.error:
         pass
@@ -168,7 +173,7 @@ def _draw_day_cell(ui, editor, cell_date, theme):
     for i, (cal, t) in enumerate(visible):
         y = base_y + i
         attr = curses.color_pair(theme.pair(cal.color)) # color the task with its subcalendar color
-        text = f"{'✓ ' if t.completed else ''}{t.name[:cell_w - (2 if t.completed else 0)]}"
+        text = f"{'✓ ' if t.completed else ''}{t.name[:cell_w - (2 if t.completed else 0)]}" # completion markers
         if cell_date == selected and (scroll_offset + i) == selected_index:
             attr |= curses.A_REVERSE # highlight selected task
 
@@ -190,6 +195,9 @@ def _draw_day_cell(ui, editor, cell_date, theme):
 
 
 def _draw_full_grid(ui, editor, theme):
+    """
+    Draw a full 6x7 grid of day cells to represent a visual calendar.
+    """
     _draw_calendar_base(ui, editor)
     first_of_month = editor.selected_date.replace(day=1)
 
@@ -205,6 +213,10 @@ def _draw_full_grid(ui, editor, theme):
 
 
 def draw_screen(ui, editor, theme):
+    """
+    Render the entire screen.
+    Performs a full redraw when required, otherwise updates only affected day cells.
+    """
     if editor.redraw:
         _draw_full_grid(ui, editor, theme)
         editor.redraw_counter += 1
@@ -217,7 +229,7 @@ def draw_screen(ui, editor, theme):
         _draw_day_cell(ui, editor, editor.selected_date, theme)
 
     if editor.mode is Mode.PROMPT and editor.prompt:
-        update_promptwin(ui, editor.prompt["text"] + editor.prompt["value"])
+        update_promptwin(ui, editor.prompt["label"] + editor.prompt["user_input"])
     else:
         _draw_prompt_status(ui, editor, theme)
 

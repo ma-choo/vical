@@ -1,3 +1,4 @@
+# command.py - Command mode input
 # This file is part of vical.
 # License: MIT (see LICENSE)
 
@@ -19,8 +20,8 @@ def register_command(name, func):
 def command_input(ui, editor, key):
     if editor.prompt is None:
         editor.prompt = {
-            "text": ":",
-            "value": "",
+            "label": ":",
+            "user_input": "",
             "on_submit": lambda cmd: _execute(editor, cmd),
         }
         editor.mode = Mode.PROMPT

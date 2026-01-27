@@ -44,7 +44,9 @@ def _draw_prompt_status(ui, editor, theme):
         f"{'[+]' if editor.modified else ''}"
         f"{f'  {editor.operator} ' if editor.operator else ' '}"
         f"{f'  {editor.count}' if editor.count else ''}"
-        f"  {editor.mode}"
+        f"{f'  {editor.mode} ' if not editor.mode == Mode.NORMAL else ' '}"
+        f"  {editor.view}"
+        # f"  {editor.mode}"
         f"  {editor.last_motion}"
         f"{f' {editor.saved_state_id[:4]} {editor.state_id[:4]}' if editor.debug else ''}"
         f"{f'  {editor.redraw} {editor.redraw_counter}' if editor.debug else ''}"
@@ -86,6 +88,10 @@ def _draw_calendar_base(ui, editor):
     Draw static calendar elements
     (grid lines, day headers, month footer).
     """
+    CELL_TEXT_PADDING_X = 1
+    FOOTER_RIGHT_PADDING = 2
+    FOOTER_LEFT_PADDING = 1
+
     ui.mainwin.erase()
 
     # grid lines (6x7 rows/columns)
@@ -98,16 +104,16 @@ def _draw_calendar_base(ui, editor):
     # day name headers
     for x in range(7):
         try:
-            ui.mainwin.addstr(0, x * ui.mainwin_wfactor + 1,
-                              _get_day_name(x)[:ui.mainwin_wfactor - 1])
+            ui.mainwin.addstr(0, x * ui.mainwin_wfactor + CELL_TEXT_PADDING_X,
+                              _get_day_name(x)[:ui.mainwin_wfactor - CELL_TEXT_PADDING_X])
         except curses.error:
             pass
 
     # month footer with month name and year
     footer_str = f"{_get_month_name(editor.selected_date.month)}-{editor.selected_date.year}"
-    footer_x = max(0, ui.mainwin_w - 2 - len(footer_str))
+    footer_x = max(0, ui.mainwin_w - FOOTER_RIGHT_PADDING - len(footer_str))
     try:
-        ui.mainwin.addstr(ui.mainwin_h - 1, footer_x, footer_str)
+        ui.mainwin.addstr(ui.mainwin_h - FOOTER_LEFT_PADDING, footer_x, footer_str)
     except curses.error:
         pass
 
@@ -118,20 +124,27 @@ def _draw_day_cell(ui, editor, cell_date, theme):
     - day numbers
     - current date and date selection
     - tasks and task selection
-    - scroll inidicators
+    - scroll indicators
     """
+    CELL_INSET_Y = 1
+    CELL_INSET_X = 1
+    DAY_HEADER_ROWS = 1
+    CELL_RIGHT_PADDING = 2
+    CELL_BORDER_THICKNESS = 1
+    COMPLETION_MARK_WIDTH = 2
+
     today = date.today()
-    selected = editor.selected_date
+    selected_date = editor.selected_date
 
     # calculate cell index relative to first visible date
     idx = (cell_date - editor.first_visible_date).days
-    pos_y = (idx // 7) * ui.mainwin_hfactor + 1
-    pos_x = (idx % 7) * ui.mainwin_wfactor + 1
-    base_y = pos_y + 1
-    arrow_x = pos_x + ui.mainwin_wfactor - 2
+    pos_y = (idx // 7) * ui.mainwin_hfactor + CELL_INSET_Y
+    pos_x = (idx % 7) * ui.mainwin_wfactor + CELL_INSET_X
+    base_y = pos_y + DAY_HEADER_ROWS
+    arrow_x = pos_x + ui.mainwin_wfactor - CELL_RIGHT_PADDING
 
-    cell_w = ui.mainwin_wfactor - 1
-    cell_h = ui.mainwin_hfactor - 1
+    cell_w = ui.mainwin_wfactor - CELL_BORDER_THICKNESS
+    cell_h = ui.mainwin_hfactor - CELL_BORDER_THICKNESS
 
     # 1. clear cell area
     for r in range(cell_h):
@@ -142,12 +155,12 @@ def _draw_day_cell(ui, editor, cell_date, theme):
 
     # 2. draw day numbers
     attr = 0
-    if cell_date.month != selected.month:
+    if cell_date.month != selected_date.month:
         attr |= curses.color_pair(theme.pair("dim")) # dim day numbers outside selected month
     else:
         if cell_date == today:
             attr |= curses.color_pair(theme.pair("today")) # highlight current date
-        if cell_date == selected:
+        if cell_date == selected_date:
             attr |= curses.A_REVERSE # highlight selected date
     try:
         ui.mainwin.attron(attr)
@@ -157,7 +170,7 @@ def _draw_day_cell(ui, editor, cell_date, theme):
         pass
 
     # 3. draw tasks
-    max_per_day = ui.mainwin_hfactor - 2
+    max_per_day = ui.mainwin_hfactor - (DAY_HEADER_ROWS + CELL_BORDER_THICKNESS)
     tasks = []
     for cal in editor.subcalendars:
         if cal.hidden:
@@ -166,15 +179,15 @@ def _draw_day_cell(ui, editor, cell_date, theme):
             if t.date == cell_date:
                 tasks.append((cal, t))
 
-    scroll_offset = editor.task_scroll_offset if cell_date == selected else 0
+    scroll_offset = editor.task_scroll_offset if cell_date == selected_date else 0
     visible = tasks[scroll_offset:scroll_offset + max_per_day]
-    selected_index = editor.selected_task_index if cell_date == selected else -1
+    selected_index = editor.selected_task_index if cell_date == selected_date else -1
 
     for i, (cal, t) in enumerate(visible):
         y = base_y + i
         attr = curses.color_pair(theme.pair(cal.color)) # color the task with its subcalendar color
-        text = f"{'✓ ' if t.completed else ''}{t.name[:cell_w - (2 if t.completed else 0)]}" # completion markers
-        if cell_date == selected and (scroll_offset + i) == selected_index:
+        text = f"{'✓ ' if t.completed else ''}{t.name[:cell_w - (COMPLETION_MARK_WIDTH if t.completed else 0)]}" # completion markers
+        if cell_date == selected_date and (scroll_offset + i) == selected_index:
             attr |= curses.A_REVERSE # highlight selected task
 
         try:
@@ -189,7 +202,7 @@ def _draw_day_cell(ui, editor, cell_date, theme):
         if scroll_offset > 0:
             ui.mainwin.addstr(base_y, arrow_x, "▲")
         if scroll_offset + max_per_day < len(tasks):
-            ui.mainwin.addstr(base_y + len(visible) - 1, arrow_x, "▼")
+            ui.mainwin.addstr(base_y + len(visible) - CELL_BORDER_THICKNESS, arrow_x, "▼")
     except curses.error:
         pass
 
@@ -202,7 +215,7 @@ def _draw_full_grid(ui, editor, theme):
     first_of_month = editor.selected_date.replace(day=1)
 
     # last sunday before the first day of the month
-    offset = (first_of_month.weekday() + 1) % 7  # Mon=0 Sun=6
+    offset = (first_of_month.weekday() + 1) % 7  # mon=0 sun=6
     start_date = first_of_month - timedelta(days=offset)
     editor.first_visible_date = start_date
 

@@ -3,7 +3,7 @@
 # License: MIT (see LICENSE)
 
 from datetime import date, timedelta
-from vical.core.editor import Mode
+from vical.core.editor import Mode, View
 from vical.core.subcalendar import Subcalendar, save_subcalendars, Task
 from vical.core.state import capture_state, apply_state, compute_state_id, undoable
 
@@ -441,3 +441,12 @@ def prev_subcal(editor):
     if not editor.subcalendars:
         return
     editor.selected_subcal_index = (editor.selected_subcal_index - 1) % len(editor.subcalendars)
+
+
+# ---OTHER---
+
+def change_view(editor):
+    if editor.view == View.MONTHLY:
+        editor.view = View.WEEKLY
+    elif editor.view == View.WEEKLY:
+        editor.view = View.MONTHLY

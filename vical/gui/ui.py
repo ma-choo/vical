@@ -56,31 +56,36 @@ class CursesUI:
         self.mainwin = curses.newwin(self.mainwin_h, self.mainwin_w, self.mainwin_y, self.mainwin_x)
         self.promptwin = curses.newwin(self.promptwin_h, self.promptwin_w, self.promptwin_y, self.promptwin_x)
 
-    def handle_resize(self): # TODO: remove magic numbers from here
+    def handle_resize(self):
         self.screen_h, self.screen_w = self.stdscr.getmaxyx()
 
-        # recalc mainwin
-        self.mainwin_hfactor = max(1, (self.screen_h - 2) // 6)
-        self.mainwin_wfactor = max(1, (self.screen_w - 2) // 7)
-        self.mainwin_h = self.mainwin_hfactor * 6 + 1
-        self.mainwin_w = self.mainwin_wfactor * 7 + 1
+        # recompute usable space
+        usable_h = self.screen_h - self.PROMPT_ROWS - self.CAL_BORDERS
+        usable_w = self.screen_w - self.CAL_BORDERS
 
-        # recalc promptwin
-        self.promptwin_y = min(self.mainwin_h, self.screen_h - self.PROMPT_ROWS)
-        self.promptwin_w = self.screen_w
-        self.promptwin_h = 1
-        self.promptwin_x = 0
+        # recalc mainwin scaling factors
+        self.mainwin_hfactor = max(1, usable_h // self.CAL_ROWS)
+        self.mainwin_wfactor = max(1, usable_w // self.CAL_COLS)
+
+        # recalc mainwin dimensions
+        self.mainwin_h = self.mainwin_hfactor * self.CAL_ROWS + 1
+        self.mainwin_w = self.mainwin_wfactor * self.CAL_COLS + 1
         self.mainwin_y = 0
         self.mainwin_x = 0
+
+        # recalc promptwin
+        self.promptwin_h = self.PROMPT_ROWS
+        self.promptwin_w = self.screen_w
+        self.promptwin_y = min(self.mainwin_h, self.screen_h - self.PROMPT_ROWS)
+        self.promptwin_x = 0
 
         # reinitialize windows
         del self.mainwin
         del self.promptwin
         self.init_windows()
 
-        # flush input
         curses.flushinp()
-        self.redraw = True
+        self.layout_update = True
 
     def _update_editor_layout(self, editor):
         editor.max_tasks_visible = max(0, self.mainwin_hfactor - self.CAL_BORDERS)

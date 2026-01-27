@@ -17,6 +17,11 @@ class Mode(Enum):
     PROMPT = auto()
 
 
+class View(Enum):
+    MONTHLY = auto()
+    WEEKLY = auto()
+
+
 class Editor:
     def __init__(self):
         self.subcalendars = load_subcalendars()
@@ -28,8 +33,11 @@ class Editor:
         self.last_motion = '0'
         self.msg = ("vical 0.01 - type :help for help or :q to quit", 0)
 
+        self.view = View.MONTHLY
+
         self.selected_date = date.today()
         self.last_selected_date = self.selected_date
+        self.first_visible_date = None
         self.selected_subcal_index = 0
         self.selected_task_index = 0
         self.task_scroll_offset = 0

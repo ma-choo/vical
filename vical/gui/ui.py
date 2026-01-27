@@ -3,11 +3,13 @@
 # License: MIT (see LICENSE)
 
 import curses
+
 from vical.core.editor import Mode
 from vical.input import keys
 from vical.input.normal import normal_input
 from vical.input.prompt import prompt_input
 from vical.input.command import command_input
+from vical.input.visual import visual_input
 from vical.input.operator import operator_pending_input
 from vical.theme.manager import ThemeManager
 from vical.gui.draw import draw_screen
@@ -90,6 +92,7 @@ class CursesUI:
     def _update_editor_layout(self, editor):
         editor.max_tasks_visible = max(0, self.mainwin_hfactor - self.CAL_BORDERS)
         editor.redraw = True
+        self.layout_update = False
 
     def main(self, editor):
         try:
@@ -105,6 +108,8 @@ class CursesUI:
                         command_input(self, editor, key)
                     case Mode.PROMPT:
                         prompt_input(self, editor, key)
+                    case Mode.VISUAL:
+                        visual_input(editor, key)
                     case Mode.OPERATOR_PENDING:
                         operator_pending_input(editor, key)
 

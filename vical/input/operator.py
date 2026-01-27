@@ -29,14 +29,14 @@ def operator_pending_input(editor, key):
 def _operator_delete(editor, key):
     # dd - delete current task
     if key == ord('d'):
-        commands.delete_task(editor)
+        commands.delete_item(editor)
         return
 
 
 def _operator_change(editor, key):
     # cw - rename selected task
     if key == ord('w'):
-        commands.rename_task(editor)
+        commands.rename_item(editor)
         return
 
 

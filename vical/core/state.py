@@ -8,42 +8,40 @@ import json
 import hashlib
 import copy
 
+from vical.core.subcalendar import Task, Event
+
 
 @dataclass
 class State:
     subcalendars: list
     selected_subcal_index: int
-    selected_task_index: int
+    selected_item_index: int
 
 
 def capture_state(editor) -> State:
-    """
-    Take a deep copy snapshot of editor state for undo.
-    """
     return State(
         subcalendars=copy.deepcopy(editor.subcalendars),
         selected_subcal_index=editor.selected_subcal_index,
-        selected_task_index=editor.selected_task_index,
+        selected_item_index=editor.selected_item_index,
     )
 
 
 def apply_state(editor, state: State):
-    """
-    Restore editor state from a State.
-    """
     editor.subcalendars = copy.deepcopy(state.subcalendars)
     editor.selected_subcal_index = state.selected_subcal_index
-    editor.selected_task_index = state.selected_task_index
+    editor.selected_item_index = state.selected_item_index
     editor.redraw = True
 
 
 def compute_state_id(editor):
-    """
-    Compute a deterministic change ID based on the current state of subcalendars and tasks.
-    """
     data = []
     for subcal in editor.subcalendars:
-        tasks_data = [(task.name, task.date.isoformat(), task.completed) for task in subcal.tasks]
+        tasks_data = []
+        for item in subcal.items:
+            if isinstance(item, Task):
+                tasks_data.append((item.name, item.date.isoformat(), item.completed))
+            elif isinstance(item, Event):
+                tasks_data.append((item.name, item.start_date.isoformat(), item.end_date.isoformat()))
         data.append({
             "name": subcal.name,
             "color": subcal.color,

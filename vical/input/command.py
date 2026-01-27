@@ -3,6 +3,7 @@
 # License: MIT (see LICENSE)
 
 import curses
+
 from vical.input.prompt import prompt_input, keys
 from vical.core import commands
 from vical.core.editor import Mode

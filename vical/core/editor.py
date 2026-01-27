@@ -2,9 +2,10 @@
 # This file is part of vical.
 # License: MIT (see LICENSE)
 
-from datetime import date
+from datetime import date, timedelta
 from enum import Enum, auto
-from vical.core.subcalendar import load_subcalendars
+
+from vical.storage.jsonstore import load_subcalendars
 from vical.core.state import capture_state, compute_state_id
 
 
@@ -24,8 +25,6 @@ class View(Enum):
 
 class Editor:
     def __init__(self):
-        self.subcalendars = load_subcalendars()
-
         self.mode = Mode.NORMAL
         self.prompt = None
         self.operator = ""
@@ -38,10 +37,13 @@ class Editor:
         self.selected_date = date.today()
         self.last_selected_date = self.selected_date
         self.first_visible_date = None
+        self.visual_anchor_date: date | None = None  # start of visual selection
+
+        self.subcalendars = load_subcalendars()
         self.selected_subcal_index = 0
-        self.selected_task_index = 0
-        self.task_scroll_offset = 0
-        self.max_tasks_visible = 0
+        self.selected_item_index = 0
+        self.item_scroll_offset = 0
+        self.max_items_visible = 0
 
         initial_state = capture_state(self)
         self.state_id = compute_state_id(self)
@@ -49,6 +51,8 @@ class Editor:
         self.undo_stack = []
         self.redo_stack = []
         self.MAX_HISTORY = 50
+
+        self.dim_when_completed = True
 
         self.redraw = True
         self.redraw_counter = 0
@@ -62,9 +66,7 @@ class Editor:
 
     @property
     def modified(self) -> bool:
-        """
-        Returns whether the editor state has changed from the last saved snapshot.
-        """
+        """Return whether the editor state has changed from the last saved snapshot."""
         return self.state_id != self.saved_state_id
 
     @property
@@ -72,85 +74,95 @@ class Editor:
         return self.subcalendars[self.selected_subcal_index]
 
     @property
-    def selected_task(self):
+    def selected_item(self):
         """
-        Return the currently selected task for the selected day.
+        Return the currently selected calendar item for the selected day.
         """
-        tasks = self.get_tasks_for_selected_day()
-        if not tasks:
+        items = self.get_items_for_selected_day()
+        if not items:
             return None
-        return tasks[self.selected_task_index % len(tasks)][1]
+        return items[self.selected_item_index % len(items)][1]
 
     def mark_saved(self):
         self.saved_state_id = self.state_id
 
-    def get_tasks_for_selected_day(self):
+    def get_items_for_selected_day(self):
         """
-        Collect all visible tasks for the currently selected date.
+        Collect all visible calendar items for the currently selected date.
+        Returns a list of tuples: (subcalendar, item)
         """
-        tasks = []
+        items = []
         for cal in self.subcalendars:
             if cal.hidden:
                 continue
-            for t in cal.tasks:
-                if (t.year, t.month, t.day) == (self.selected_date.year, self.selected_date.month, self.selected_date.day):
-                    tasks.append((cal, t))
-        return tasks
+            for item in cal.items:
+                if item.occurs_on(self.selected_date):
+                    items.append((cal, item))
+        return items
 
-    def set_date(self, new_date, *, reset_tasks: bool):
+    def set_selected_date(self, new_date, *, reset_items: bool = True, record_motion: int | None = None):
         """
-        Update the selected date and manage redraw and task selection behavior.
-        Optionally resets task selection or preserves it when navigating visually.
+        Update the editor's selected date (normal mode) or selection range (visual mode).
+        - VISUAL mode: visual_anchor_date is the start of the selection.
+        - NORMAL mode: visual_anchor_date is cleared.
         """
-        if self.month_has_changed(new_date):
-            self.redraw = True
+        if self.view == View.MONTHLY:
+            if self.month_has_changed(new_date):
+                self.redraw = True
+        elif self.view == View.WEEKLY:
+            if self.week_has_changed(new_date):
+                self.redraw = True
+
+        # handle visual anchor
+        if self.mode == Mode.VISUAL:
+            if self.visual_anchor_date is None:
+                self.visual_anchor_date = self.selected_date
+            # in visual mode, selected_date is always the "active end" of selection
+        else:
+            self.visual_anchor_date = None
 
         self.last_selected_date = self.selected_date
         self.selected_date = new_date
 
-        if reset_tasks:
-            self.selected_task_index = 0
-            self.task_scroll_offset = 0
+        if reset_items:
+            self.selected_item_index = 0
+            self.item_scroll_offset = 0
         else:
-            self.clamp_task_index()
+            self.clamp_item_index()
 
-    def change_date(self, new_date, motion=0):
-        """
-        Change the selected date as the result of a motion command.
-        Resets task selection, records the last motion, and clears the count buffer.
-        """
-        self.set_date(new_date, reset_tasks=True)
-        self.last_motion = f"{'+' if motion > 0 else ''}{motion}"
-        self.count = ""
+        if record_motion is not None:
+            self.last_motion = f"{'+' if record_motion > 0 else ''}{record_motion}"
+            self.count = ""
 
-    def max_task_index(self):
-        """
-        Return the maximum valid task index for the selected day.
-        """
-        return max(0, len(self.get_tasks_for_selected_day()) - 1)
 
-    def clamp_task_index(self):
+    def max_item_index(self):
+        return max(0, len(self.get_items_for_selected_day()) - 1)
+
+    def clamp_item_index(self):
         """
-        Clamp the selected task index to a valid range for the selected day.
+        Clamp the selected item index to a valid range for the selected day.
         """
-        tasks = self.get_tasks_for_selected_day()
-        if tasks:
-            max_idx = len(tasks) - 1
-            self.selected_task_index = min(self.selected_task_index, max_idx)
+        items = self.get_items_for_selected_day()
+        if items:
+            max_idx = len(items) - 1
+            self.selected_item_index = min(self.selected_item_index, max_idx)
         else:
-            self.selected_task_index = 0
-            self.task_scroll_offset = 0
+            self.selected_item_index = 0
+            self.item_scroll_offset = 0
 
-    def ensure_task_visible(self):
-        """
-        Adjust the task scroll offset to ensure the selected task is visible.
-        """
-        if self.selected_task_index < self.task_scroll_offset:
-            self.task_scroll_offset = self.selected_task_index
-        elif self.selected_task_index >= self.task_scroll_offset + self.max_tasks_visible:
-            self.task_scroll_offset = (
-                self.selected_task_index - self.max_tasks_visible + 1
-            )
+    def ensure_item_visible(self):
+        items = self.get_items_for_selected_day()
+        max_per_day = self.max_items_visible
+
+        if self.selected_item_index < self.item_scroll_offset:
+            self.item_scroll_offset = self.selected_item_index
+        elif self.selected_item_index >= self.item_scroll_offset + max_per_day:
+            self.item_scroll_offset = self.selected_item_index - max_per_day + 1
+
+        # clamp
+        max_offset = max(0, len(items) - max_per_day)
+        if self.item_scroll_offset > max_offset:
+            self.item_scroll_offset = max_offset
 
     def month_has_changed(self, new_date):
         """
@@ -158,3 +170,11 @@ class Editor:
         Used to trigger full redraws when calendar layout changes.
         """
         return (new_date.month != self.selected_date.month) or (new_date.year != self.selected_date.year)
+
+    def week_has_changed(self, new_date: date) -> bool:
+        """
+        Returns True if new_date is in a different week (Sunday-Saturday) from selected_date.
+        """
+        old_start = self.selected_date - timedelta(days=(self.selected_date.weekday() + 1) % 7)
+        new_start = new_date - timedelta(days=(new_date.weekday() + 1) % 7)
+        return old_start != new_start

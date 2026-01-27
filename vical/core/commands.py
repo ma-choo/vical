@@ -3,9 +3,11 @@
 # License: MIT (see LICENSE)
 
 from datetime import date, timedelta
+
 from vical.core.editor import Mode, View
-from vical.core.subcalendar import Subcalendar, save_subcalendars, Task
+from vical.core.subcalendar import Subcalendar, CalendarItem, Task, Event
 from vical.core.state import capture_state, apply_state, compute_state_id, undoable
+from vical.storage.jsonstore import save_subcalendars
 
 
 # ---COMMON---
@@ -101,7 +103,7 @@ def show_help(editor):
     pass # TODO
 
 
-# ---TASKS---
+# ---CALENDAR ITEMS---
 def new_task(editor):
     """:newtask
 
@@ -114,13 +116,13 @@ def new_task(editor):
             editor.msg = ("Task name cannot be blank", 1)
             return
 
-        new_task = Task(name, selected_date, 0)
+        new_task = Task(uid=None, name=name, tdate=selected_date, completed=False)
 
         try:
             with undoable(editor):
-                editor.selected_subcal.insert_task(new_task)
+                editor.selected_subcal.insert_item(new_task)
         except Exception as e:
-            editor.msg = (f"Failed to create task '{name}': {e}", 1)
+            editor.msg = (f"New task: '{name}': {e}", 1)
             return
 
         editor.msg = (f"Created new task: '{name}'", 0)
@@ -135,152 +137,193 @@ def new_task(editor):
     editor.mode = Mode.PROMPT
 
 
-def mark_complete(editor):
-    """:complete
+def new_event(editor):
+    """:newevent
 
-    Mark the selected task completed.
+    Create a new event on the currently selected date within the currently selected subcalendar.
     """
-    task = editor.selected_task
-    if task:
-        try:
-            with undoable(editor):
-                task.toggle_completed()
-        except Exception as e:
-            editor.msg = (f"Failed to mark complete '{task.name}': {e}", 1)
-
-
-def rename_task(editor):
-    """:renametask
-    
-    Rename the selected task.
-    """
-    task = editor.selected_task
-    if not task:
-        editor.msg = ("No task selected", 1)
-        return
+    selected_date = editor.selected_date
 
     def execute(name):
         if not name.strip():
-            editor.msg = ("Task name cannot be blank", 1)
+            editor.msg = ("Event name cannot be blank", 1)
             return
+
+        if not editor.visual_anchor_date:
+            new_event = Event(uid=None, name=name, start_date=selected_date, end_date=selected_date)
+        else:
+            _start_date = min(editor.visual_anchor_date, editor.selected_date)
+            _end_date = max(editor.visual_anchor_date, editor.selected_date)
+            new_event = Event(uid=None, name=name, start_date=_start_date, end_date=_end_date)
+
         try:
             with undoable(editor):
-                task.name = name
+                editor.selected_subcal.insert_item(new_event)
         except Exception as e:
-            editor.msg = (f"Failed to rename task '{task.name}': {e}", 1)
+            editor.msg = (f"New event: '{name}': {e}", 1)
             return
-        editor.msg = (f"Renamed task to '{name}'", 0)
+
+        editor.msg = (f"Created new event: '{name}'", 0)
         editor.redraw = True
 
     editor.prompt = {
-        "label": "Rename task: ",
-        "user_input": task.name,
+        "label": "Enter event name: ",
+        "user_input": "",
         "on_submit": execute,
         "on_cancel": None,
     }
     editor.mode = Mode.PROMPT
 
 
-def delete_task(editor):
-    """:deltask
+def mark_complete(editor):
+    """:complete
 
-    Delete the currently selected task and store it in the register.
+    Mark the selected task completed.
     """
-    task = editor.selected_task
-    if not task:
-        editor.msg = ("No task selected", 1)
+    item = editor.selected_item
+    if not item:
+        return  # nothing selected
+
+    if not isinstance(item, Task):
+        return # can only complete tasks
+
+    try:
+        with undoable(editor):
+            item.toggle_completed()
+    except Exception as e:
+        editor.msg = (f"Failed to mark complete '{item.name}': {e}", 1)
+
+
+def rename_item(editor):
+    """:renameitem
+    
+    Rename the selected item.
+    """
+    item = editor.selected_item
+    if not item:
+        editor.msg = ("No item selected", 1)
+        return
+
+    def execute(name):
+        if not name.strip():
+            editor.msg = ("Item name cannot be blank", 1)
+            return
+        try:
+            with undoable(editor):
+                item.name = name
+        except Exception as e:
+            editor.msg = (f"Failed to rename item '{item.name}': {e}", 1)
+            return
+        editor.msg = (f"Renamed item to '{name}'", 0)
+        editor.redraw = True
+
+    editor.prompt = {
+        "label": "Rename item: ",
+        "user_input": item.name,
+        "on_submit": execute,
+        "on_cancel": None,
+    }
+    editor.mode = Mode.PROMPT
+
+
+def delete_item(editor):
+    """:delitem
+
+    Delete the currently selected item and store it in the register.
+    """
+    item = editor.selected_item
+    if not item:
+        editor.msg = ("No item selected", 1)
         return
 
     subcal = editor.selected_subcal
 
     try:
         with undoable(editor):
-            removed = subcal.pop_task(task)
+            removed = subcal.remove_item(item)
     except Exception as e:
-        editor.msg = (f"Failed to delete task '{task.name}': {e}", 1)
+        editor.msg = (f"Failed to delete item '{item.name}': {e}", 1)
         return
 
-    # store deleted task in registers
+    # store deleted item in registers
+    """
     entry = (removed.copy(), subcal)
-    editor.registers['"'] = entry     # unnamed register
-    editor.registers['1'] = entry     # last delete
-    # shift older deletes # TODO this stuff should be handled in an editor.add_to_register function.
+    editor.registers['"'] = entry
+    editor.registers['1'] = entry
     for i in range(9, 1, -1):
         editor.registers[str(i)] = editor.registers.get(str(i - 1))
+    """
 
     editor.msg = (f"Deleted '{removed.name}'", 0)
     editor.redraw = True
-    editor.clamp_task_index()
+    editor.clamp_item_index()
 
 
-def yank_task(editor):
+def yank_item(editor):
     """:yank
 
-    Yank the selected task into the register.
+    Yank the selected item into the register.
     """
-    task = editor.selected_task
-    if not task:
-        editor.msg = ("No task selected", 1)
+    item = editor.selected_item
+    if not item:
+        editor.msg = ("No item selected", 1)
         return
 
-    # store both task and original subcal
-    entry = (task.copy(), editor.selected_subcal)
-    editor.registers['"'] = entry # unnamed register
-    editor.registers['0'] = entry # last yank
-    editor.msg = (f"Yanked '{task.name}'", 0)
+    entry = (item.copy(), editor.selected_subcal)
+    editor.registers['"'] = entry
+    editor.registers['0'] = entry
+    editor.msg = (f"Yanked '{item.name}'", 0)
 
 
-def paste_task(editor):
+def paste_item(editor):
     """:paste
 
-    Paste a task from the register into its original subcalendar.
+    Paste an item from the register into its original subcalendar.
     """
     reg = editor.registers['"']
     if not reg:
         editor.msg = ("Nothing to paste", 1)
         return
 
-    task, original_subcal = reg
-    new_task = task.copy()
-    new_task.date = editor.selected_date
+    item, original_subcal = reg
+    new_item = item.copy()
+    new_item.date = editor.selected_date
 
     target = original_subcal
-
     try:
         with undoable(editor):
-            target.insert_task(new_task)
+            target.insert_item(new_item)
     except Exception as e:
-        editor.msg = (f"Failed to paste task '{task.name}': {e}", 1)
+        editor.msg = (f"Failed to paste item '{item.name}': {e}", 1)
         return
 
-    editor.msg = (f"Pasted '{task.name}' into '{target.name}'", 0)
+    editor.msg = (f"Pasted '{item.name}' into '{target.name}'", 0)
     editor.redraw = True
-    
 
-def paste_task_to_selected_subcal(editor):
+
+def paste_item_to_selected_subcal(editor):
     """:paste2
 
-    Paste a task from the register into the currently selected subcalendar.
+    Paste an item from the register into the currently selected subcalendar.
     """
     reg = editor.registers['"']
     if not reg:
         editor.msg = ("Nothing to paste", 1)
         return
 
-    task, original_subcal = reg
-    new_task = task.copy()
-    new_task.date = editor.selected_date
+    item, original_subcal = reg
+    new_item = item.copy()
+    new_item.date = editor.selected_date
 
     target = editor.selected_subcal
-
     try:
         with undoable(editor):
-            target.insert_task(new_task)
+            target.insert_item(new_item)
     except Exception as e:
-        editor.msg = (f"Failed to paste task '{task.name}': {e}", 1)
+        editor.msg = (f"Failed to paste item '{item.name}': {e}", 1)
         return
 
-    editor.msg = (f"Pasted '{task.name}' into '{target.name}'", 0)
+    editor.msg = (f"Pasted '{item.name}' into '{target.name}'", 0)
     editor.redraw = True
 
 
@@ -444,9 +487,10 @@ def prev_subcal(editor):
 
 
 # ---OTHER---
+def toggle_monthly_view(editor):
+    editor.view = View.MONTHLY
+    editor.redraw = True
 
-def change_view(editor):
-    if editor.view == View.MONTHLY:
-        editor.view = View.WEEKLY
-    elif editor.view == View.WEEKLY:
-        editor.view = View.MONTHLY
+def toggle_weekly_view(editor):
+    editor.view = View.WEEKLY
+    editor.redraw = True

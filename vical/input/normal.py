@@ -43,6 +43,10 @@ def normal_input(editor, key):
         editor.count += chr(key)
         return
 
+    if key == ord('v'):
+        editor.mode = Mode.VISUAL
+        return
+
     # operators
     if key in OPERATOR_KEYS:
         editor.operator = chr(key)

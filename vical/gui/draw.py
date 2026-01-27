@@ -5,7 +5,9 @@
 import curses
 import calendar
 from datetime import date, timedelta
-from vical.core.editor import Mode
+
+from vical.core.subcalendar import Task, Event
+from vical.core.editor import Mode, View
 
 
 def _attron(win, theme, color):
@@ -45,8 +47,6 @@ def _draw_prompt_status(ui, editor, theme):
         f"{f'  {editor.operator} ' if editor.operator else ' '}"
         f"{f'  {editor.count}' if editor.count else ''}"
         f"{f'  {editor.mode} ' if not editor.mode == Mode.NORMAL else ' '}"
-        f"  {editor.view}"
-        # f"  {editor.mode}"
         f"  {editor.last_motion}"
         f"{f' {editor.saved_state_id[:4]} {editor.state_id[:4]}' if editor.debug else ''}"
         f"{f'  {editor.redraw} {editor.redraw_counter}' if editor.debug else ''}"
@@ -57,9 +57,10 @@ def _draw_prompt_status(ui, editor, theme):
     ui.promptwin.erase()
 
     try:
-        # display selected task if any
-        if editor.selected_task:
-            ui.promptwin.addstr(0, 0, editor.selected_task.name)
+        # display selected item if any
+        if editor.selected_item:
+            ui.promptwin.addstr(0, 0, editor.selected_item.name)
+
         else:
             if is_error:
                 _attron(ui.promptwin, theme, "error")
@@ -94,11 +95,16 @@ def _draw_calendar_base(ui, editor):
 
     ui.mainwin.erase()
 
-    # grid lines (6x7 rows/columns)
-    for y in range(1, 6):
-        ui.mainwin.hline(ui.mainwin_hfactor * y, 0, curses.ACS_HLINE, ui.mainwin_w)
-    for x in range(1, 7):
-        ui.mainwin.vline(0, ui.mainwin_wfactor * x, curses.ACS_VLINE, ui.mainwin_h)
+    # grid lines 
+    if editor.view == View.MONTHLY:
+        # 6x7 rows/columns
+        for y in range(1, 6):
+            ui.mainwin.hline(ui.mainwin_hfactor * y, 0, curses.ACS_HLINE, ui.mainwin_w)
+        for x in range(1, 7):
+            ui.mainwin.vline(0, ui.mainwin_wfactor * x, curses.ACS_VLINE, ui.mainwin_h)
+    elif editor.view == View.WEEKLY:
+        for x in range(1, 7):
+            ui.mainwin.vline(0, ui.mainwin_wfactor * x, curses.ACS_VLINE, ui.mainwin_h)
     ui.mainwin.box()
 
     # day name headers
@@ -118,12 +124,26 @@ def _draw_calendar_base(ui, editor):
         pass
 
 
-def _draw_day_cell(ui, editor, cell_date, theme):
+def _get_selection_range(editor):
+    """
+    Return (start, end) of the currently selected date range.
+    - Normal mode: start == end == selected_date
+    - Visual mode: anchor and selected_date define the range
+    """
+    if editor.mode == Mode.VISUAL and editor.visual_anchor_date is not None:
+        start = min(editor.visual_anchor_date, editor.selected_date)
+        end = max(editor.visual_anchor_date, editor.selected_date)
+    else:
+        start = end = editor.selected_date
+    return start, end
+
+
+def _draw_day_cell_monthly(ui, editor, cell_date, theme):
     """
     Draw a single day cell with
     - day numbers
     - current date and date selection
-    - tasks and task selection
+    - calendar items and selection
     - scroll indicators
     """
     CELL_INSET_Y = 1
@@ -135,6 +155,9 @@ def _draw_day_cell(ui, editor, cell_date, theme):
 
     today = date.today()
     selected_date = editor.selected_date
+
+    # compute max items visible in the cell
+    editor.max_items_visible = ui.mainwin_hfactor - (DAY_HEADER_ROWS + CELL_BORDER_THICKNESS)
 
     # calculate cell index relative to first visible date
     idx = (cell_date - editor.first_visible_date).days
@@ -160,8 +183,11 @@ def _draw_day_cell(ui, editor, cell_date, theme):
     else:
         if cell_date == today:
             attr |= curses.color_pair(theme.pair("today")) # highlight current date
-        if cell_date == selected_date:
-            attr |= curses.A_REVERSE # highlight selected date
+        date_selection_begin, date_selection_end = _get_selection_range(editor)
+
+        if date_selection_begin <= cell_date <= date_selection_end:
+            attr |= curses.A_REVERSE  # highlight selected date
+
     try:
         ui.mainwin.attron(attr)
         ui.mainwin.addstr(pos_y, pos_x, f"{cell_date.day:>{cell_w}}") # draw day number at top right corner of day cell
@@ -169,31 +195,65 @@ def _draw_day_cell(ui, editor, cell_date, theme):
     except curses.error:
         pass
 
-    # 3. draw tasks
+    # 3. draw calendar items
     max_per_day = ui.mainwin_hfactor - (DAY_HEADER_ROWS + CELL_BORDER_THICKNESS)
-    tasks = []
+    items = []
     for cal in editor.subcalendars:
         if cal.hidden:
             continue
-        for t in cal.tasks:
-            if t.date == cell_date:
-                tasks.append((cal, t))
+        for item in cal.items:
+            if item.occurs_on(cell_date):
+                items.append((cal, item))
 
-    scroll_offset = editor.task_scroll_offset if cell_date == selected_date else 0
-    visible = tasks[scroll_offset:scroll_offset + max_per_day]
-    selected_index = editor.selected_task_index if cell_date == selected_date else -1
+    scroll_offset = editor.item_scroll_offset if cell_date == selected_date else 0
+    visible = items[scroll_offset:scroll_offset + max_per_day]
+    selected_index = editor.selected_item_index if cell_date == selected_date else -1
 
-    for i, (cal, t) in enumerate(visible):
+    SELECTION_MARKER = "▶ "
+    COMPLETED_MARKER = "✓ "
+    SCROLL_INDICATOR_UP = '▲'
+    SCROLL_INDICATOR_DOWN = '▼'
+
+    for i, (cal, item) in enumerate(visible):
         y = base_y + i
-        attr = curses.color_pair(theme.pair(cal.color)) # color the task with its subcalendar color
-        # completion markers
-        text = f"{'✓ ' if t.completed else ''}{t.name[:cell_w - (COMPLETION_MARK_WIDTH if t.completed else 0)]}"
-        if cell_date == selected_date and (scroll_offset + i) == selected_index:
-            attr |= curses.A_REVERSE # highlight selected task
 
+        # determine base attributes
+        # events: reverse attr
+        if isinstance(item, Event):
+            attr = curses.color_pair(theme.pair(cal.color)) | curses.A_REVERSE
+            item_text = item.name
+
+            # draw full-width reverse background for event
+            try:
+                ui.mainwin.attron(attr)
+                ui.mainwin.addstr(y, pos_x, " " * cell_w)
+                ui.mainwin.attroff(attr)
+            except curses.error:
+                pass
+
+        else: # tasks: normal attr
+            attr = curses.color_pair(theme.pair(cal.color))
+            if item.completed and editor.dim_when_completed:
+                attr = curses.color_pair(theme.pair("dim"))
+            item_text = f"{COMPLETED_MARKER if item.completed else ''}{item.name}"
+
+        # draw selection marker if this is the currently selected item
+        if cell_date == selected_date and (scroll_offset + i) == selected_index:
+            try:
+                ui.mainwin.addstr(y, pos_x, SELECTION_MARKER)  # normal attr for marker
+            except curses.error:
+                pass
+            draw_x = pos_x + len(SELECTION_MARKER)
+        else:
+            draw_x = pos_x
+
+        # truncate item text to fit in remaining cell width
+        text_to_draw = item_text[:cell_w - (draw_x - pos_x)]
+
+        # draw item text (events already have background filled)
         try:
             ui.mainwin.attron(attr)
-            ui.mainwin.addstr(y, pos_x, text)
+            ui.mainwin.addstr(y, draw_x, text_to_draw)
             ui.mainwin.attroff(attr)
         except curses.error:
             pass
@@ -201,14 +261,125 @@ def _draw_day_cell(ui, editor, cell_date, theme):
     # 4. draw scroll indicators
     try:
         if scroll_offset > 0:
-            ui.mainwin.addstr(base_y, arrow_x, "▲")
-        if scroll_offset + max_per_day < len(tasks):
-            ui.mainwin.addstr(base_y + len(visible) - CELL_BORDER_THICKNESS, arrow_x, "▼")
+            ui.mainwin.addstr(base_y, arrow_x, SCROLL_INDICATOR_UP)
+        if scroll_offset + max_per_day < len(items):
+            ui.mainwin.addstr(base_y + len(visible) - CELL_BORDER_THICKNESS, arrow_x, SCROLL_INDICATOR_DOWN)
     except curses.error:
         pass
 
 
-def _draw_full_grid(ui, editor, theme):
+def _draw_day_cell_weekly(ui, editor, cell_date, theme):
+    """
+    Draw a single day cell for weekly view.
+    """
+    CELL_INSET_Y = 1
+    CELL_INSET_X = 1
+    DAY_HEADER_ROWS = 1
+    CELL_RIGHT_PADDING = 2
+    CELL_BORDER_THICKNESS = 1
+    COMPLETION_MARK_WIDTH = 2
+
+    today = date.today()
+    selected_date = editor.selected_date
+
+    cell_w = ui.mainwin_wfactor - CELL_BORDER_THICKNESS
+    cell_h = ui.mainwin_hfactor - CELL_BORDER_THICKNESS
+
+    # compute horizontal position (0..6)
+    day_index = (cell_date - editor.first_visible_date).days
+    pos_x = day_index * ui.mainwin_wfactor + CELL_INSET_X
+    pos_y = CELL_INSET_Y  # weekly view: all cells in one row
+    base_y = pos_y + DAY_HEADER_ROWS
+    arrow_x = pos_x + ui.mainwin_wfactor - CELL_RIGHT_PADDING
+
+    # clear cell
+    for r in range(cell_h):
+        try:
+            ui.mainwin.addstr(pos_y + r, pos_x, " " * cell_w)
+        except curses.error:
+            pass
+
+    # draw day number
+    attr = 0
+    if cell_date.month != selected_date.month:
+        attr |= curses.color_pair(theme.pair("dim"))
+    else:
+        if cell_date == today:
+            attr |= curses.color_pair(theme.pair("today"))
+        start, end = _get_selection_range(editor)
+        if start <= cell_date <= end:
+            attr |= curses.A_REVERSE
+
+    try:
+        ui.mainwin.attron(attr)
+        ui.mainwin.addstr(pos_y, pos_x, f"{cell_date.day:>{cell_w}}")
+        ui.mainwin.attroff(attr)
+    except curses.error:
+        pass
+
+    # draw items (events/tasks) same as monthly
+    max_per_day = ui.mainwin_hfactor - (DAY_HEADER_ROWS + CELL_BORDER_THICKNESS)
+    items = []
+    for cal in editor.subcalendars:
+        if cal.hidden:
+            continue
+        for item in cal.items:
+            if item.occurs_on(cell_date):
+                items.append((cal, item))
+
+    scroll_offset = editor.item_scroll_offset if cell_date == selected_date else 0
+    visible = items[scroll_offset:scroll_offset + max_per_day]
+    selected_index = editor.selected_item_index if cell_date == selected_date else -1
+
+    SELECTION_MARKER = "▶ "
+    COMPLETED_MARKER = "✓ "
+
+    for i, (cal, item) in enumerate(visible):
+        y = base_y + i
+
+        if isinstance(item, Event):
+            attr = curses.color_pair(theme.pair(cal.color)) | curses.A_REVERSE
+            try:
+                ui.mainwin.attron(attr)
+                ui.mainwin.addstr(y, pos_x, " " * cell_w)  # full-width reverse
+                ui.mainwin.attroff(attr)
+            except curses.error:
+                pass
+            item_text = item.name
+        else:
+            attr = curses.color_pair(theme.pair(cal.color))
+            if getattr(item, "completed", False) and editor.dim_when_completed:
+                attr = curses.color_pair(theme.pair("dim"))
+            item_text = f"{COMPLETED_MARKER if getattr(item, 'completed', False) else ''}{item.name}"
+
+        # draw selection marker
+        if cell_date == selected_date and (scroll_offset + i) == selected_index:
+            try:
+                ui.mainwin.addstr(y, pos_x, SELECTION_MARKER)
+            except curses.error:
+                pass
+            draw_x = pos_x + len(SELECTION_MARKER)
+        else:
+            draw_x = pos_x
+
+        # truncate to fit cell
+        text_to_draw = item_text[:cell_w - (draw_x - pos_x)]
+        try:
+            ui.mainwin.attron(attr)
+            ui.mainwin.addstr(y, draw_x, text_to_draw)
+            ui.mainwin.attroff(attr)
+        except curses.error:
+            pass
+
+
+def _draw_day_cell(ui, editor, cell_date, theme):
+    if editor.view == View.MONTHLY:
+        _draw_day_cell_monthly(ui, editor, cell_date, theme)
+    if editor.view == View.WEEKLY:
+        _draw_day_cell_weekly(ui, editor, cell_date, theme)
+
+
+def _draw_full_month(ui, editor, theme):
     """
     Draw a full 6x7 grid of day cells to represent a visual calendar.
     """
@@ -223,10 +394,53 @@ def _draw_full_grid(ui, editor, theme):
     # draw 42 days (6 weeks)
     for i in range(42):
         d = start_date + timedelta(days=i)
-        _draw_day_cell(ui, editor, d, theme)
+        _draw_day_cell_monthly(ui, editor, d, theme)
+
+
+def _draw_full_week(ui, editor, theme):
+    _draw_calendar_base(ui, editor)
+
+    weekday = editor.selected_date.weekday()  # Monday=0
+    start_of_week = editor.selected_date - timedelta(days=(weekday + 1) % 7)
+    editor.first_visible_date = start_of_week
+
+    for i in range(7):
+        cell_date = start_of_week + timedelta(days=i)
+        _draw_day_cell_weekly(ui, editor, cell_date, theme)
 
 
 def draw_screen(ui, editor, theme):
+    """
+    Render the entire screen.
+    """
+    if editor.redraw:
+        if editor.view == View.MONTHLY:
+            _draw_full_month(ui, editor, theme)
+        elif editor.view == View.WEEKLY:
+            _draw_full_week(ui, editor, theme)
+
+        editor.redraw_counter += 1
+        ui.stdscr.refresh()
+        editor.last_selected_date = editor.selected_date
+    else:
+        # redraw only changed day cells
+        if editor.last_selected_date != editor.selected_date:
+            _draw_day_cell(ui, editor, editor.last_selected_date, theme)
+        _draw_day_cell(ui, editor, editor.selected_date, theme)
+
+    if editor.mode is Mode.PROMPT and editor.prompt:
+        update_promptwin(ui, editor.prompt["label"] + editor.prompt["user_input"])
+    else:
+        _draw_prompt_status(ui, editor, theme)
+
+    ui.mainwin.noutrefresh()
+    ui.promptwin.noutrefresh()
+    curses.doupdate()
+    
+    editor.redraw = False
+
+
+def draw_screen_old(ui, editor, theme):
     """
     Render the entire screen.
     Performs a full redraw when required, otherwise updates only affected day cells.
@@ -252,4 +466,3 @@ def draw_screen(ui, editor, theme):
     curses.doupdate()
     
     editor.redraw = False
-    ui.redraw = False

@@ -1,7 +1,9 @@
 # main.py - Main program entry point.
 # This file is part of vical.
 # License: MIT (see LICENSE)
+
 import curses
+
 from vical.gui.ui import CursesUI
 from vical.core.editor import Editor
 from vical.input.defaults import register_default_keys, register_default_commands

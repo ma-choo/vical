@@ -2,57 +2,88 @@
 # This file is part of vical.
 # License: MIT (see LICENSE)
 
-import os
-import json
+import uuid
 from datetime import datetime, date
-from typing import List
 
 
-DATA_DIR = os.path.expanduser("~/.local/share/vical")
-DATA_FILE = os.path.join(DATA_DIR, "subcalendars.json")
+class CalendarItem:
+    TYPE = "base"
 
-
-class Task:
-    def __init__(self, name: str, tdate: date, completed: bool = False, remind: bool = False):
+    def __init__(self, uid: str | None, name: str, remind: bool = False):
+        self.uid = uid or uuid.uuid4().hex
         self.name = name
-        self.completed = completed
         self.remind = remind
+
+    def occurs_on(self, day: date) -> bool:
+        raise NotImplementedError
+
+    def sort_key(self):
+        raise NotImplementedError
+
+    def to_dict(self) -> dict:
+        raise NotImplementedError
+
+    def base_dict(self) -> dict:
+        return {
+            "type": self.TYPE,
+            "uid": self.uid,
+            "name": self.name,
+            "remind": self.remind,
+        }
+
+
+class Task(CalendarItem):
+    TYPE = "task"
+
+    def __init__(self, uid: str | None, name: str, tdate: date,
+                 completed: bool = False, remind: bool = False):
+        super().__init__(uid, name, remind)
         self.date = tdate
+        self.completed = completed
 
-    @property
-    def year(self) -> int:
-        return self.date.year
+    def occurs_on(self, day: date) -> bool:
+        return self.date == day
 
-    @property
-    def month(self) -> int:
-        return self.date.month
-
-    @property
-    def day(self) -> int:
-        return self.date.day
+    def sort_key(self):
+        return (self.date, self.name)
 
     def toggle_completed(self):
         self.completed = not self.completed
 
-    def copy(self):
-        return Task(self.name, self.date, self.completed)
+    def to_dict(self) -> dict:
+        d = self.base_dict()
+        d.update({
+            "date": self.date.strftime("%Y%m%d"),
+            "completed": self.completed,
+        })
+        return d
+
+
+class Event(CalendarItem):
+    TYPE = "event"
+
+    def __init__(self, uid: str | None, name: str,
+                 start_date: date, end_date: date,
+                 remind: bool = False):
+        super().__init__(uid, name, remind)
+        if end_date < start_date:
+            raise ValueError("Event end_date cannot be before start_date")
+        self.start_date = start_date
+        self.end_date = end_date
+
+    def occurs_on(self, day: date) -> bool:
+        return self.start_date <= day <= self.end_date
+
+    def sort_key(self):
+        return (self.start_date, self.end_date, self.name)
 
     def to_dict(self) -> dict:
-        return {
-            "name": self.name,
-            "completed": self.completed,
-            "remind": self.remind,
-            "date": self.date.strftime("%Y%m%d")
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "Task":
-        return cls(
-            name=data["name"],
-            completed=data.get("completed", False),
-            remind=data.get("remind", False),
-            tdate=datetime.strptime(data["date"], "%Y%m%d").date()
-        )
+        d = self.base_dict()
+        d.update({
+            "start_date": self.start_date.strftime("%Y%m%d"),
+            "end_date": self.end_date.strftime("%Y%m%d"),
+        })
+        return d
 
 
 class Subcalendar:
@@ -60,75 +91,60 @@ class Subcalendar:
         self.name = name
         self.color = color
         self.hidden = hidden
-        self.tasks: List[Task] = []
+        self.items: list[CalendarItem] = []
 
-    def insert_task(self, task: Task):
-        self.tasks.append(task)
-        self.sort_tasks()
-
-    def pop_task(self, task: Task):
-        if task in self.tasks:
-            self.tasks.remove(task)
-            return task
-        return None
-
-    def sort_tasks(self):
-        self.tasks.sort(key=lambda t: (t.year, t.month, t.day, t.name))
-
-    def toggle_hidden(self):
-        self.hidden = not self.hidden
-
-    def rename(self, new_name: str):
-        self.name = new_name
-
-    def change_color(self, color: str):
-        self.color = color
+    def insert_item(self, item: CalendarItem):
+        self.items.append(item)
+        self.items.sort(key=lambda i: i.sort_key())
+    
+    def remove_item(self, item: CalendarItem) -> CalendarItem:
+        self.items.remove(item)
+        self.items.sort(key=lambda i: i.sort_key())
+        return item
 
     def to_dict(self) -> dict:
         return {
             "name": self.name,
             "color": self.color,
             "hidden": self.hidden,
-            "tasks": [t.to_dict() for t in self.tasks],
+            "items": [item.to_dict() for item in self.items],
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "Subcalendar":
-        subcal = cls(
+        sc = cls(
             name=data["name"],
             color=data.get("color", "green"),
             hidden=data.get("hidden", False),
         )
 
-        for task_data in data.get("tasks", []):
-            subcal.tasks.append(Task.from_dict(task_data))
+        for item_data in data.get("items", []):
+            sc.items.append(calendar_item_from_dict(item_data))
 
-        subcal.sort_tasks()
-        return subcal
+        sc.items.sort(key=lambda i: i.sort_key())
+        return sc
 
 
-def save_subcalendars(subcalendars: List[Subcalendar], filepath: str = DATA_FILE):
-    os.makedirs(DATA_DIR, exist_ok=True)
+def calendar_item_from_dict(data: dict) -> CalendarItem:
+    item_type = data.get("type")
 
-    with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(
-            [sc.to_dict() for sc in subcalendars],
-            f,
-            indent=2,
-            ensure_ascii=False,
+    if item_type == Task.TYPE:
+        return Task(
+            uid=data["uid"],
+            name=data["name"],
+            tdate=datetime.strptime(data["date"], "%Y%m%d").date(),
+            completed=data.get("completed", False),
+            remind=data.get("remind", False),
         )
 
+    if item_type == Event.TYPE:
+        return Event(
+            uid=data["uid"],
+            name=data["name"],
+            start_date=datetime.strptime(data["start_date"], "%Y%m%d").date(),
+            end_date=datetime.strptime(data["end_date"], "%Y%m%d").date(),
+            remind=data.get("remind", False),
+        )
 
-def load_subcalendars(filepath: str = DATA_FILE) -> List[Subcalendar]:
-    if not os.path.exists(filepath):
-        default = Subcalendar("default", 1) # default subcalendar
-        save_subcalendars([default], filepath)
-        return [default]
-
-    with open(filepath, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    if not isinstance(data, list):
-        raise ValueError("Invalid vical data format: expected a list")
-
-    return [Subcalendar.from_dict(d) for d in data]
+    raise ValueError(f"Unknown calendar item type: {item_type}")
+    

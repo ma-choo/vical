@@ -3,6 +3,7 @@
 # License: MIT (see LICENSE)
 
 import curses
+
 from vical.theme.config import ConfigLoader
 
 

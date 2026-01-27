@@ -186,7 +186,8 @@ def _draw_day_cell(ui, editor, cell_date, theme):
     for i, (cal, t) in enumerate(visible):
         y = base_y + i
         attr = curses.color_pair(theme.pair(cal.color)) # color the task with its subcalendar color
-        text = f"{'✓ ' if t.completed else ''}{t.name[:cell_w - (COMPLETION_MARK_WIDTH if t.completed else 0)]}" # completion markers
+        # completion markers
+        text = f"{'✓ ' if t.completed else ''}{t.name[:cell_w - (COMPLETION_MARK_WIDTH if t.completed else 0)]}"
         if cell_date == selected_date and (scroll_offset + i) == selected_index:
             attr |= curses.A_REVERSE # highlight selected task
 

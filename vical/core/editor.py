@@ -53,10 +53,11 @@ class Editor:
         self.MAX_HISTORY = 50
 
         self.dim_when_completed = True
+        self.week_starts_on_sunday = True
 
         self.redraw = True
         self.redraw_counter = 0
-        self.debug = True
+        self.debug = False
 
         self.registers = {
             '"': None,  # unnamed register

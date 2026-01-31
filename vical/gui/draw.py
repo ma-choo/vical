@@ -18,14 +18,33 @@ def _attroff(win, theme, color):
     win.attroff(curses.color_pair(theme.pair(color)))
 
 
-def _get_day_name(day):
-    return calendar.day_abbr[(day + 6) % 7]  # shift so sunday = 0
+def _get_day_name(day, editor):
+    first_weekday = _get_first_weekday(editor)
+    return calendar.day_abbr[(first_weekday + day) % 7]
 
 
 def _get_month_name(month):
     if 1 <= month <= 12:
         return calendar.month_abbr[month]
     raise ValueError(f"Invalid month number: {month}")
+
+
+def _get_first_weekday(editor) -> int:
+    """
+    Return the weekday index that the calendar starts on.
+    6 = Sunday, 5 = Saturday
+    """
+    return 6 if editor.week_starts_on_sunday else 5
+
+
+def _get_start_of_week(d: date, editor) -> date:
+    """
+    Given a date, return the date of the first day of that week
+    according to editor.week_starts_on_sunday.
+    """
+    first_weekday = _get_first_weekday(editor)
+    delta = (d.weekday() - first_weekday) % 7
+    return d - timedelta(days=delta)
 
 
 def update_promptwin(ui, text):
@@ -58,16 +77,16 @@ def _draw_prompt_status(ui, editor, theme):
 
     try:
         # display selected item if any
-        if editor.selected_item:
-            ui.promptwin.addstr(0, 0, editor.selected_item.name)
+        # if editor.selected_item:
+        #     ui.promptwin.addstr(0, 0, editor.selected_item.name)
 
+        # else:
+        if is_error:
+            _attron(ui.promptwin, theme, "error")
+            ui.promptwin.addstr(0, 0, f"ERROR: {msg}")
+            _attroff(ui.promptwin, theme, "error")
         else:
-            if is_error:
-                _attron(ui.promptwin, theme, "error")
-                ui.promptwin.addstr(0, 0, f"ERROR: {msg}")
-                _attroff(ui.promptwin, theme, "error")
-            else:
-                ui.promptwin.addstr(0, 0, msg)
+            ui.promptwin.addstr(0, 0, msg)
 
         # draw uncolored part of status line
         right_x = ui.mainwin_w - (len(status_prefix) + len(subcal_name))
@@ -109,11 +128,11 @@ def _draw_calendar_base(ui, editor):
 
     # day name headers
     for x in range(7):
-        try:
-            ui.mainwin.addstr(0, x * ui.mainwin_wfactor + CELL_TEXT_PADDING_X,
-                              _get_day_name(x)[:ui.mainwin_wfactor - CELL_TEXT_PADDING_X])
-        except curses.error:
-            pass
+        ui.mainwin.addstr(
+            0,
+            x * ui.mainwin_wfactor + CELL_TEXT_PADDING_X,
+            _get_day_name(x, editor)[:ui.mainwin_wfactor - CELL_TEXT_PADDING_X]
+        )
 
     # month footer with month name and year
     footer_str = f"{_get_month_name(editor.selected_date.month)}-{editor.selected_date.year}"
@@ -138,21 +157,28 @@ def _get_selection_range(editor):
     return start, end
 
 
+# layout constants for drawing day cells:
+CELL_INSET_Y = 1
+CELL_INSET_X = 1
+DAY_HEADER_ROWS = 1
+CELL_RIGHT_PADDING = 2
+CELL_BORDER_THICKNESS = 1
+COMPLETION_MARK_WIDTH = 2
+SELECTION_MARKER = ">" # "▶ "
+UNCOMPLETED_MARKER = "[ ]"
+COMPLETED_MARKER = "[*]" # "✓ "
+SCROLL_INDICATOR_UP = '▲'
+SCROLL_INDICATOR_DOWN = '▼'
+
+
 def _draw_day_cell_monthly(ui, editor, cell_date, theme):
     """
     Draw a single day cell with
     - day numbers
-    - current date and date selection
+    - current date and selection highlights
     - calendar items and selection
-    - scroll indicators
+    - scroll indicators if the items for a cell are more than the visible cell height
     """
-    CELL_INSET_Y = 1
-    CELL_INSET_X = 1
-    DAY_HEADER_ROWS = 1
-    CELL_RIGHT_PADDING = 2
-    CELL_BORDER_THICKNESS = 1
-    COMPLETION_MARK_WIDTH = 2
-
     today = date.today()
     selected_date = editor.selected_date
 
@@ -180,13 +206,11 @@ def _draw_day_cell_monthly(ui, editor, cell_date, theme):
     attr = 0
     if cell_date.month != selected_date.month:
         attr |= curses.color_pair(theme.pair("dim")) # dim day numbers outside selected month
-    else:
-        if cell_date == today:
-            attr |= curses.color_pair(theme.pair("today")) # highlight current date
-        date_selection_begin, date_selection_end = _get_selection_range(editor)
-
-        if date_selection_begin <= cell_date <= date_selection_end:
-            attr |= curses.A_REVERSE  # highlight selected date
+    if cell_date == today:
+        attr |= curses.color_pair(theme.pair("today")) # highlight current date
+    date_selection_begin, date_selection_end = _get_selection_range(editor)
+    if date_selection_begin <= cell_date <= date_selection_end:
+        attr = curses.A_REVERSE  # highlight selected date
 
     try:
         ui.mainwin.attron(attr)
@@ -209,21 +233,24 @@ def _draw_day_cell_monthly(ui, editor, cell_date, theme):
     visible = items[scroll_offset:scroll_offset + max_per_day]
     selected_index = editor.selected_item_index if cell_date == selected_date else -1
 
-    SELECTION_MARKER = "▶ "
-    COMPLETED_MARKER = "✓ "
-    SCROLL_INDICATOR_UP = '▲'
-    SCROLL_INDICATOR_DOWN = '▼'
-
+    # determine item attributes
     for i, (cal, item) in enumerate(visible):
         y = base_y + i
 
-        # determine base attributes
-        # events: reverse attr
+        # EVENTS:
         if isinstance(item, Event):
             attr = curses.color_pair(theme.pair(cal.color)) | curses.A_REVERSE
-            item_text = item.name
-
-            # draw full-width reverse background for event
+            # only show the event name if the cell date is
+            # the selected date,
+            # the event's start date,
+            # or a sunday
+            show_text = (
+                cell_date == selected_date or
+                cell_date == item.start_date or
+                cell_date.weekday() == 6 # 6 = sunday
+            )
+            item_text = item.name if show_text else ""
+            # otherwise only draw the colored bar
             try:
                 ui.mainwin.attron(attr)
                 ui.mainwin.addstr(y, pos_x, " " * cell_w)
@@ -231,11 +258,11 @@ def _draw_day_cell_monthly(ui, editor, cell_date, theme):
             except curses.error:
                 pass
 
-        else: # tasks: normal attr
+        else: # TASKS:
             attr = curses.color_pair(theme.pair(cal.color))
             if item.completed and editor.dim_when_completed:
                 attr = curses.color_pair(theme.pair("dim"))
-            item_text = f"{COMPLETED_MARKER if item.completed else ''}{item.name}"
+            item_text = f"{COMPLETED_MARKER if item.completed else UNCOMPLETED_MARKER}{item.name}"
 
         # draw selection marker if this is the currently selected item
         if cell_date == selected_date and (scroll_offset + i) == selected_index:
@@ -250,7 +277,7 @@ def _draw_day_cell_monthly(ui, editor, cell_date, theme):
         # truncate item text to fit in remaining cell width
         text_to_draw = item_text[:cell_w - (draw_x - pos_x)]
 
-        # draw item text (events already have background filled)
+        # draw item text
         try:
             ui.mainwin.attron(attr)
             ui.mainwin.addstr(y, draw_x, text_to_draw)
@@ -272,12 +299,6 @@ def _draw_day_cell_weekly(ui, editor, cell_date, theme):
     """
     Draw a single day cell for weekly view.
     """
-    CELL_INSET_Y = 1
-    CELL_INSET_X = 1
-    DAY_HEADER_ROWS = 1
-    CELL_RIGHT_PADDING = 2
-    CELL_BORDER_THICKNESS = 1
-    COMPLETION_MARK_WIDTH = 2
 
     today = date.today()
     selected_date = editor.selected_date
@@ -303,12 +324,12 @@ def _draw_day_cell_weekly(ui, editor, cell_date, theme):
     attr = 0
     if cell_date.month != selected_date.month:
         attr |= curses.color_pair(theme.pair("dim"))
-    else:
-        if cell_date == today:
-            attr |= curses.color_pair(theme.pair("today"))
-        start, end = _get_selection_range(editor)
-        if start <= cell_date <= end:
-            attr |= curses.A_REVERSE
+    # else:
+    if cell_date == today:
+        attr |= curses.color_pair(theme.pair("today"))
+    start, end = _get_selection_range(editor)
+    if start <= cell_date <= end:
+        attr = curses.A_REVERSE
 
     try:
         ui.mainwin.attron(attr)
@@ -331,9 +352,6 @@ def _draw_day_cell_weekly(ui, editor, cell_date, theme):
     visible = items[scroll_offset:scroll_offset + max_per_day]
     selected_index = editor.selected_item_index if cell_date == selected_date else -1
 
-    SELECTION_MARKER = "▶ "
-    COMPLETED_MARKER = "✓ "
-
     for i, (cal, item) in enumerate(visible):
         y = base_y + i
 
@@ -345,7 +363,11 @@ def _draw_day_cell_weekly(ui, editor, cell_date, theme):
                 ui.mainwin.attroff(attr)
             except curses.error:
                 pass
-            item_text = item.name
+            show_text = (
+                cell_date == item.start_date or
+                cell_date.weekday() == 6 # 6 = sunday
+            )
+            item_text = item.name if show_text else ""
         else:
             attr = curses.color_pair(theme.pair(cal.color))
             if getattr(item, "completed", False) and editor.dim_when_completed:
@@ -381,14 +403,13 @@ def _draw_day_cell(ui, editor, cell_date, theme):
 
 def _draw_full_month(ui, editor, theme):
     """
-    Draw a full 6x7 grid of day cells to represent a visual calendar.
+    Draw a full 6x7 grid of day cells to represent a full monthly calendar.
     """
     _draw_calendar_base(ui, editor)
     first_of_month = editor.selected_date.replace(day=1)
 
     # last sunday before the first day of the month
-    offset = (first_of_month.weekday() + 1) % 7  # mon=0 sun=6
-    start_date = first_of_month - timedelta(days=offset)
+    start_date = _get_start_of_week(first_of_month, editor)
     editor.first_visible_date = start_date
 
     # draw 42 days (6 weeks)
@@ -398,10 +419,12 @@ def _draw_full_month(ui, editor, theme):
 
 
 def _draw_full_week(ui, editor, theme):
+    """
+    Draw a full row of 7 day cells to represent a full weekly schedule.
+    """
     _draw_calendar_base(ui, editor)
 
-    weekday = editor.selected_date.weekday()  # Monday=0
-    start_of_week = editor.selected_date - timedelta(days=(weekday + 1) % 7)
+    start_of_week = _get_start_of_week(editor.selected_date, editor)
     editor.first_visible_date = start_of_week
 
     for i in range(7):

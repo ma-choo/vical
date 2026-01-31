@@ -149,9 +149,9 @@ def new_event(editor):
             editor.msg = ("Event name cannot be blank", 1)
             return
 
-        if not editor.visual_anchor_date:
+        if not editor.visual_anchor_date: # no visual selection, single day date
             new_event = Event(uid=None, name=name, start_date=selected_date, end_date=selected_date)
-        else:
+        else: # visual selection supports date range
             _start_date = min(editor.visual_anchor_date, editor.selected_date)
             _end_date = max(editor.visual_anchor_date, editor.selected_date)
             new_event = Event(uid=None, name=name, start_date=_start_date, end_date=_end_date)
@@ -490,6 +490,7 @@ def prev_subcal(editor):
 def toggle_monthly_view(editor):
     editor.view = View.MONTHLY
     editor.redraw = True
+
 
 def toggle_weekly_view(editor):
     editor.view = View.WEEKLY

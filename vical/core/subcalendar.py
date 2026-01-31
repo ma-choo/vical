@@ -17,6 +17,10 @@ class CalendarItem:
     def occurs_on(self, day: date) -> bool:
         raise NotImplementedError
 
+    @property
+    def sort_date(self) -> date:
+        raise NotImplementedError
+
     def sort_key(self):
         raise NotImplementedError
 
@@ -44,8 +48,12 @@ class Task(CalendarItem):
     def occurs_on(self, day: date) -> bool:
         return self.date == day
 
+    @property
+    def sort_date(self) -> date:
+        return self.date
+
     def sort_key(self):
-        return (self.date, self.name)
+        return (self.sort_date, 1, self.name.lower())
 
     def toggle_completed(self):
         self.completed = not self.completed
@@ -74,8 +82,12 @@ class Event(CalendarItem):
     def occurs_on(self, day: date) -> bool:
         return self.start_date <= day <= self.end_date
 
+    @property
+    def sort_date(self) -> date:
+        return self.start_date
+
     def sort_key(self):
-        return (self.start_date, self.end_date, self.name)
+        return (self.sort_date, 0, self.name.lower())
 
     def to_dict(self) -> dict:
         d = self.base_dict()
@@ -101,6 +113,9 @@ class Subcalendar:
         self.items.remove(item)
         self.items.sort(key=lambda i: i.sort_key())
         return item
+
+    def toggle_hidden(self):
+        self.hidden = not self.hidden
 
     def to_dict(self) -> dict:
         return {

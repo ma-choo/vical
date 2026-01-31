@@ -21,6 +21,8 @@ def register_default_keys():
     register_normal_key(ord('z'),   commands.hide_subcal)
     register_normal_key(ord('['),   commands.prev_subcal)
     register_normal_key(ord(']'),   commands.next_subcal)
+    register_normal_key(ord('m'),   commands.toggle_monthly_view)
+    register_normal_key(ord('w'),   commands.toggle_weekly_view)
 
     # motions
     register_motion_key(ord('h'), -1)

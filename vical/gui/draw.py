@@ -34,7 +34,7 @@ def _get_first_weekday(editor) -> int:
     Return the weekday index that the calendar starts on.
     6 = Sunday, 5 = Saturday
     """
-    return 6 if editor.week_starts_on_sunday else 5
+    return editor.week_start
 
 
 def _get_start_of_week(d: date, editor) -> date:
@@ -163,29 +163,30 @@ CELL_INSET_X = 1
 DAY_HEADER_ROWS = 1
 CELL_RIGHT_PADDING = 2
 CELL_BORDER_THICKNESS = 1
-COMPLETION_MARK_WIDTH = 2
-SELECTION_MARKER = ">" # "▶ "
-UNCOMPLETED_MARKER = "[ ]"
-COMPLETED_MARKER = "[*]" # "✓ "
+SELECTION_MARKER = ">"
+EVENT_UNCOMPLETED_MARKER = "󰄰 "
+EVENT_COMPLETED_MARKER = "󰄳 "
+EVENT_RIBBON_START = ""
+EVENT_RIBBON_END = ""
 SCROLL_INDICATOR_UP = '▲'
 SCROLL_INDICATOR_DOWN = '▼'
 
 
+def _is_event_text_visible(editor, cell_date, item):
+    return (
+        cell_date == editor.selected_date or
+        cell_date == item.start_date or
+        cell_date.weekday() == editor.week_start
+    )
+
+
+# def _draw_day_cell_monthly(ui, editor, cell_date, theme): today = date.today() selected_date = editor.selected_date editor.max_items_visible = ui.mainwin_hfactor - (DAY_HEADER_ROWS + CELL_BORDER_THICKNESS) idx = (cell_date - editor.first_visible_date).days pos_y = (idx // 7) * ui.mainwin_hfactor + CELL_INSET_Y pos_x = (idx % 7) * ui.mainwin_wfactor + CELL_INSET_X base_y = pos_y + DAY_HEADER_ROWS arrow_x = pos_x + ui.mainwin_wfactor - CELL_RIGHT_PADDING cell_w = ui.mainwin_wfactor - CELL_BORDER_THICKNESS cell_h = ui.mainwin_hfactor - CELL_BORDER_THICKNESS # clear cell for r in range(cell_h): try: ui.mainwin.addstr(pos_y + r, pos_x, " " * cell_w) except curses.error: pass # day number attr = 0 if cell_date.month != selected_date.month: attr |= curses.color_pair(theme.pair("dim")) if cell_date == today: attr |= curses.color_pair(theme.pair("today")) start, end = _get_selection_range(editor) if start <= cell_date <= end: attr = curses.A_REVERSE try: ui.mainwin.attron(attr) ui.mainwin.addstr(pos_y, pos_x, f"{cell_date.day:>{cell_w}}") ui.mainwin.attroff(attr) except curses.error: pass # collect items items = [] for cal in editor.subcalendars: if cal.hidden: continue for item in cal.items: if item.occurs_on(cell_date): items.append((cal, item)) scroll_offset = editor.item_scroll_offset if cell_date == selected_date else 0 visible = items[scroll_offset:scroll_offset + editor.max_items_visible] selected_index = editor.selected_item_index if cell_date == selected_date else -1 def item_is_selected(i): return (scroll_offset + i) == selected_index # draw items for i, (cal, item) in enumerate(visible): y = base_y + i # ---------------- EVENTS ---------------- if isinstance(item, Event): base_attr = curses.color_pair(theme.pair(cal.color)) | curses.A_REVERSE is_selected = (cell_date == selected_date and item_is_selected(i)) text_x = pos_x + (len(SELECTION_MARKER) if is_selected else 0) text_w = cell_w - (text_x - pos_x) # background ribbon (ALWAYS full width) try: ui.mainwin.attron(base_attr) ui.mainwin.addstr(y, pos_x, " " * cell_w) ui.mainwin.attroff(base_attr) except curses.error: pass # ribbon text if _is_event_text_visible(editor, cell_date, item): if cell_date == item.start_date or is_selected: text = EVENT_RIBBON_START + " " + item.name else: text = " " + item.name try: ui.mainwin.attron(base_attr) ui.mainwin.addstr(y, text_x, text[:text_w]) ui.mainwin.attroff(base_attr) except curses.error: pass # ribbon end cap (NO reverse, true cell edge) if cell_date == item.end_date: end_attr = curses.color_pair(theme.pair(cal.color)) end_x = pos_x + cell_w - len(EVENT_RIBBON_END) try: ui.mainwin.attron(end_attr) ui.mainwin.addstr(y, end_x, EVENT_RIBBON_END) ui.mainwin.attroff(end_attr) except curses.error: pass # selection marker OVERLAY (last) if is_selected: try: ui.mainwin.addstr(y, pos_x, SELECTION_MARKER) except curses.error: pass continue # ---------------- TASKS ---------------- attr = curses.color_pair(theme.pair(cal.color)) if item.completed and editor.dim_when_completed: attr = curses.color_pair(theme.pair("dim")) text = f"{EVENT_COMPLETED_MARKER if item.completed else EVENT_UNCOMPLETED_MARKER}{item.name}" draw_x = pos_x if cell_date == selected_date and item_is_selected(i): try: ui.mainwin.addstr(y, pos_x, SELECTION_MARKER) except curses.error: pass draw_x += len(SELECTION_MARKER) try: ui.mainwin.attron(attr) ui.mainwin.addstr(y, draw_x, text[:cell_w - (draw_x - pos_x)]) ui.mainwin.attroff(attr) except curses.error: pass # scroll indicators try: if scroll_offset > 0: ui.mainwin.addstr(base_y, arrow_x, SCROLL_INDICATOR_UP) if scroll_offset + editor.max_items_visible < len(items): ui.mainwin.addstr( base_y + len(visible) - CELL_BORDER_THICKNESS, arrow_x, SCROLL_INDICATOR_DOWN ) except curses.error: pass
+
+
 def _draw_day_cell_monthly(ui, editor, cell_date, theme):
-    """
-    Draw a single day cell with
-    - day numbers
-    - current date and selection highlights
-    - calendar items and selection
-    - scroll indicators if the items for a cell are more than the visible cell height
-    """
     today = date.today()
     selected_date = editor.selected_date
 
-    # compute max items visible in the cell
-    editor.max_items_visible = ui.mainwin_hfactor - (DAY_HEADER_ROWS + CELL_BORDER_THICKNESS)
-
-    # calculate cell index relative to first visible date
     idx = (cell_date - editor.first_visible_date).days
     pos_y = (idx // 7) * ui.mainwin_hfactor + CELL_INSET_Y
     pos_x = (idx % 7) * ui.mainwin_wfactor + CELL_INSET_X
@@ -195,124 +196,6 @@ def _draw_day_cell_monthly(ui, editor, cell_date, theme):
     cell_w = ui.mainwin_wfactor - CELL_BORDER_THICKNESS
     cell_h = ui.mainwin_hfactor - CELL_BORDER_THICKNESS
 
-    # 1. clear cell area
-    for r in range(cell_h):
-        try:
-            ui.mainwin.addstr(pos_y + r, pos_x, " " * cell_w)
-        except curses.error:
-            pass
-
-    # 2. draw day numbers
-    attr = 0
-    if cell_date.month != selected_date.month:
-        attr |= curses.color_pair(theme.pair("dim")) # dim day numbers outside selected month
-    if cell_date == today:
-        attr |= curses.color_pair(theme.pair("today")) # highlight current date
-    date_selection_begin, date_selection_end = _get_selection_range(editor)
-    if date_selection_begin <= cell_date <= date_selection_end:
-        attr = curses.A_REVERSE  # highlight selected date
-
-    try:
-        ui.mainwin.attron(attr)
-        ui.mainwin.addstr(pos_y, pos_x, f"{cell_date.day:>{cell_w}}") # draw day number at top right corner of day cell
-        ui.mainwin.attroff(attr)
-    except curses.error:
-        pass
-
-    # 3. draw calendar items
-    max_per_day = ui.mainwin_hfactor - (DAY_HEADER_ROWS + CELL_BORDER_THICKNESS)
-    items = []
-    for cal in editor.subcalendars:
-        if cal.hidden:
-            continue
-        for item in cal.items:
-            if item.occurs_on(cell_date):
-                items.append((cal, item))
-
-    scroll_offset = editor.item_scroll_offset if cell_date == selected_date else 0
-    visible = items[scroll_offset:scroll_offset + max_per_day]
-    selected_index = editor.selected_item_index if cell_date == selected_date else -1
-
-    # determine item attributes
-    for i, (cal, item) in enumerate(visible):
-        y = base_y + i
-
-        # EVENTS:
-        if isinstance(item, Event):
-            attr = curses.color_pair(theme.pair(cal.color)) | curses.A_REVERSE
-            # only show the event name if the cell date is
-            # the selected date,
-            # the event's start date,
-            # or a sunday
-            show_text = (
-                cell_date == selected_date or
-                cell_date == item.start_date or
-                cell_date.weekday() == 6 # 6 = sunday
-            )
-            item_text = item.name if show_text else ""
-            # otherwise only draw the colored bar
-            try:
-                ui.mainwin.attron(attr)
-                ui.mainwin.addstr(y, pos_x, " " * cell_w)
-                ui.mainwin.attroff(attr)
-            except curses.error:
-                pass
-
-        else: # TASKS:
-            attr = curses.color_pair(theme.pair(cal.color))
-            if item.completed and editor.dim_when_completed:
-                attr = curses.color_pair(theme.pair("dim"))
-            item_text = f"{COMPLETED_MARKER if item.completed else UNCOMPLETED_MARKER}{item.name}"
-
-        # draw selection marker if this is the currently selected item
-        if cell_date == selected_date and (scroll_offset + i) == selected_index:
-            try:
-                ui.mainwin.addstr(y, pos_x, SELECTION_MARKER)  # normal attr for marker
-            except curses.error:
-                pass
-            draw_x = pos_x + len(SELECTION_MARKER)
-        else:
-            draw_x = pos_x
-
-        # truncate item text to fit in remaining cell width
-        text_to_draw = item_text[:cell_w - (draw_x - pos_x)]
-
-        # draw item text
-        try:
-            ui.mainwin.attron(attr)
-            ui.mainwin.addstr(y, draw_x, text_to_draw)
-            ui.mainwin.attroff(attr)
-        except curses.error:
-            pass
-
-    # 4. draw scroll indicators
-    try:
-        if scroll_offset > 0:
-            ui.mainwin.addstr(base_y, arrow_x, SCROLL_INDICATOR_UP)
-        if scroll_offset + max_per_day < len(items):
-            ui.mainwin.addstr(base_y + len(visible) - CELL_BORDER_THICKNESS, arrow_x, SCROLL_INDICATOR_DOWN)
-    except curses.error:
-        pass
-
-
-def _draw_day_cell_weekly(ui, editor, cell_date, theme):
-    """
-    Draw a single day cell for weekly view.
-    """
-
-    today = date.today()
-    selected_date = editor.selected_date
-
-    cell_w = ui.mainwin_wfactor - CELL_BORDER_THICKNESS
-    cell_h = ui.mainwin_hfactor - CELL_BORDER_THICKNESS
-
-    # compute horizontal position (0..6)
-    day_index = (cell_date - editor.first_visible_date).days
-    pos_x = day_index * ui.mainwin_wfactor + CELL_INSET_X
-    pos_y = CELL_INSET_Y  # weekly view: all cells in one row
-    base_y = pos_y + DAY_HEADER_ROWS
-    arrow_x = pos_x + ui.mainwin_wfactor - CELL_RIGHT_PADDING
-
     # clear cell
     for r in range(cell_h):
         try:
@@ -320,13 +203,13 @@ def _draw_day_cell_weekly(ui, editor, cell_date, theme):
         except curses.error:
             pass
 
-    # draw day number
+    # day number
     attr = 0
     if cell_date.month != selected_date.month:
         attr |= curses.color_pair(theme.pair("dim"))
-    # else:
     if cell_date == today:
         attr |= curses.color_pair(theme.pair("today"))
+
     start, end = _get_selection_range(editor)
     if start <= cell_date <= end:
         attr = curses.A_REVERSE
@@ -338,8 +221,7 @@ def _draw_day_cell_weekly(ui, editor, cell_date, theme):
     except curses.error:
         pass
 
-    # draw items (events/tasks) same as monthly
-    max_per_day = ui.mainwin_hfactor - (DAY_HEADER_ROWS + CELL_BORDER_THICKNESS)
+    # collect items
     items = []
     for cal in editor.subcalendars:
         if cal.hidden:
@@ -348,50 +230,254 @@ def _draw_day_cell_weekly(ui, editor, cell_date, theme):
             if item.occurs_on(cell_date):
                 items.append((cal, item))
 
-    scroll_offset = editor.item_scroll_offset if cell_date == selected_date else 0
-    visible = items[scroll_offset:scroll_offset + max_per_day]
+    max_items_visible = cell_h - DAY_HEADER_ROWS
     selected_index = editor.selected_item_index if cell_date == selected_date else -1
+    scroll_offset = ui.get_scroll_offset(
+        num_items=len(items),
+        max_visible=max_items_visible,
+        selected_index=selected_index
+    ) if cell_date == selected_date else 0
+    visible = items[scroll_offset:scroll_offset + max_items_visible]
 
+    def item_is_selected(i):
+        return (scroll_offset + i) == selected_index
+
+    # draw items
     for i, (cal, item) in enumerate(visible):
         y = base_y + i
 
+        # ---------------- EVENTS ----------------
         if isinstance(item, Event):
-            attr = curses.color_pair(theme.pair(cal.color)) | curses.A_REVERSE
+            base_attr = curses.color_pair(theme.pair(cal.color)) | curses.A_REVERSE
+
+            is_selected = (cell_date == selected_date and item_is_selected(i))
+            text_x = pos_x + (len(SELECTION_MARKER) if is_selected else 0)
+            text_w = cell_w - (text_x - pos_x)
+
+            # background ribbon (ALWAYS full width)
             try:
-                ui.mainwin.attron(attr)
-                ui.mainwin.addstr(y, pos_x, " " * cell_w)  # full-width reverse
-                ui.mainwin.attroff(attr)
+                ui.mainwin.attron(base_attr)
+                ui.mainwin.addstr(y, pos_x, " " * cell_w)
+                ui.mainwin.attroff(base_attr)
             except curses.error:
                 pass
-            show_text = (
-                cell_date == item.start_date or
-                cell_date.weekday() == 6 # 6 = sunday
-            )
-            item_text = item.name if show_text else ""
-        else:
-            attr = curses.color_pair(theme.pair(cal.color))
-            if getattr(item, "completed", False) and editor.dim_when_completed:
-                attr = curses.color_pair(theme.pair("dim"))
-            item_text = f"{COMPLETED_MARKER if getattr(item, 'completed', False) else ''}{item.name}"
 
-        # draw selection marker
-        if cell_date == selected_date and (scroll_offset + i) == selected_index:
+            # ribbon text
+            if _is_event_text_visible(editor, cell_date, item):
+                if cell_date == item.start_date or is_selected:
+                    text = EVENT_RIBBON_START + " " + item.name
+                else:
+                    text = " " + item.name
+
+                try:
+                    ui.mainwin.attron(base_attr)
+                    ui.mainwin.addstr(y, text_x, text[:text_w])
+                    ui.mainwin.attroff(base_attr)
+                except curses.error:
+                    pass
+
+            # ribbon end cap (NO reverse, true cell edge)
+            if cell_date == item.end_date:
+                end_attr = curses.color_pair(theme.pair(cal.color))
+                end_x = pos_x + cell_w - len(EVENT_RIBBON_END)
+                try:
+                    ui.mainwin.attron(end_attr)
+                    ui.mainwin.addstr(y, end_x, EVENT_RIBBON_END)
+                    ui.mainwin.attroff(end_attr)
+                except curses.error:
+                    pass
+
+            # selection marker
+            if is_selected:
+                try:
+                    ui.mainwin.addstr(y, pos_x, SELECTION_MARKER)
+                except curses.error:
+                    pass
+
+            continue
+
+
+        # ---------------- TASKS ----------------
+        attr = curses.color_pair(theme.pair(cal.color))
+        if item.completed and editor.dim_when_completed:
+            attr = curses.color_pair(theme.pair("dim"))
+
+        text = f"{EVENT_COMPLETED_MARKER if item.completed else EVENT_UNCOMPLETED_MARKER}{item.name}"
+
+        draw_x = pos_x
+        if cell_date == selected_date and item_is_selected(i):
             try:
                 ui.mainwin.addstr(y, pos_x, SELECTION_MARKER)
             except curses.error:
                 pass
-            draw_x = pos_x + len(SELECTION_MARKER)
-        else:
-            draw_x = pos_x
+            draw_x += len(SELECTION_MARKER)
 
-        # truncate to fit cell
-        text_to_draw = item_text[:cell_w - (draw_x - pos_x)]
         try:
             ui.mainwin.attron(attr)
-            ui.mainwin.addstr(y, draw_x, text_to_draw)
+            ui.mainwin.addstr(y, draw_x, text[:cell_w - (draw_x - pos_x)])
             ui.mainwin.attroff(attr)
         except curses.error:
             pass
+
+    # scroll indicators
+    try:
+        if scroll_offset > 0:
+            ui.mainwin.addstr(base_y, arrow_x, SCROLL_INDICATOR_UP)
+        if scroll_offset + max_items_visible < len(items):
+            ui.mainwin.addstr(
+                base_y + len(visible) - CELL_BORDER_THICKNESS,
+                arrow_x,
+                SCROLL_INDICATOR_DOWN
+            )
+    except curses.error:
+        pass
+
+
+def _draw_day_cell_weekly(ui, editor, cell_date, theme):
+    today = date.today()
+    selected_date = editor.selected_date
+
+    cell_w = ui.mainwin_wfactor - CELL_BORDER_THICKNESS
+    cell_h = ui.mainwin_h - ui.CAL_BORDERS
+
+    day_index = (cell_date - editor.first_visible_date).days
+    pos_x = day_index * ui.mainwin_wfactor + CELL_INSET_X
+    pos_y = CELL_INSET_Y
+    base_y = pos_y + DAY_HEADER_ROWS
+    arrow_x = pos_x + ui.mainwin_wfactor - CELL_RIGHT_PADDING
+
+    # clear cell
+    for r in range(cell_h):
+        try:
+            ui.mainwin.addstr(pos_y + r, pos_x, " " * cell_w)
+        except curses.error:
+            pass
+
+    # day number
+    attr = 0
+    if cell_date.month != selected_date.month:
+        attr |= curses.color_pair(theme.pair("dim"))
+    if cell_date == today:
+        attr |= curses.color_pair(theme.pair("today"))
+
+    start, end = _get_selection_range(editor)
+    if start <= cell_date <= end:
+        attr = curses.A_REVERSE
+
+    try:
+        ui.mainwin.attron(attr)
+        ui.mainwin.addstr(pos_y, pos_x, f"{cell_date.day:>{cell_w}}")
+        ui.mainwin.attroff(attr)
+    except curses.error:
+        pass
+
+    # collect items
+    items = []
+    for cal in editor.subcalendars:
+        if cal.hidden:
+            continue
+        for item in cal.items:
+            if item.occurs_on(cell_date):
+                items.append((cal, item))
+
+    max_items_visible = cell_h - DAY_HEADER_ROWS - CELL_BORDER_THICKNESS
+    selected_index = editor.selected_item_index if cell_date == selected_date else -1
+    scroll_offset = ui.get_scroll_offset(
+        num_items=len(items),
+        max_visible=max_items_visible,
+        selected_index=selected_index
+    ) if cell_date == selected_date else 0
+    visible = items[scroll_offset:scroll_offset + max_items_visible]
+
+    def item_is_selected(i):
+        return (scroll_offset + i) == selected_index
+
+    # draw items
+    for i, (cal, item) in enumerate(visible):
+        y = base_y + i
+
+        # ---------------- EVENTS ----------------
+        if isinstance(item, Event):
+            base_attr = curses.color_pair(theme.pair(cal.color)) | curses.A_REVERSE
+            is_selected = (cell_date == selected_date and item_is_selected(i))
+            text_x = pos_x + (len(SELECTION_MARKER) if is_selected else 0)
+            text_w = cell_w - (text_x - pos_x)
+
+            # full-width background ribbon
+            try:
+                ui.mainwin.attron(base_attr)
+                ui.mainwin.addstr(y, pos_x, " " * cell_w)
+                ui.mainwin.attroff(base_attr)
+            except curses.error:
+                pass
+
+            # ribbon text
+            if _is_event_text_visible(editor, cell_date, item):
+                if cell_date == item.start_date or is_selected:
+                    text = EVENT_RIBBON_START + " " + item.name
+                else:
+                    text = " " + item.name
+                try:
+                    ui.mainwin.attron(base_attr)
+                    ui.mainwin.addstr(y, text_x, text[:text_w])
+                    ui.mainwin.attroff(base_attr)
+                except curses.error:
+                    pass
+
+            # ribbon end cap (no reverse)
+            if cell_date == item.end_date:
+                end_attr = curses.color_pair(theme.pair(cal.color))
+                end_x = pos_x + cell_w - len(EVENT_RIBBON_END)
+                try:
+                    ui.mainwin.attron(end_attr)
+                    ui.mainwin.addstr(y, end_x, EVENT_RIBBON_END)
+                    ui.mainwin.attroff(end_attr)
+                except curses.error:
+                    pass
+
+            # selection marker overlay
+            if is_selected:
+                try:
+                    ui.mainwin.addstr(y, pos_x, SELECTION_MARKER)
+                except curses.error:
+                    pass
+
+            continue
+
+        # ---------------- TASKS ----------------
+        attr = curses.color_pair(theme.pair(cal.color))
+        if getattr(item, "completed", False) and editor.dim_when_completed:
+            attr = curses.color_pair(theme.pair("dim"))
+
+        text = f"{EVENT_COMPLETED_MARKER if getattr(item, 'completed', False) else EVENT_UNCOMPLETED_MARKER}{item.name}"
+
+        draw_x = pos_x
+        if cell_date == selected_date and item_is_selected(i):
+            try:
+                ui.mainwin.addstr(y, pos_x, SELECTION_MARKER)
+            except curses.error:
+                pass
+            draw_x += len(SELECTION_MARKER)
+
+        try:
+            ui.mainwin.attron(attr)
+            ui.mainwin.addstr(y, draw_x, text[:cell_w - (draw_x - pos_x)])
+            ui.mainwin.attroff(attr)
+        except curses.error:
+            pass
+
+    # scroll indicators
+    try:
+        if scroll_offset > 0:
+            ui.mainwin.addstr(base_y, arrow_x, SCROLL_INDICATOR_UP)
+        if scroll_offset + max_items_visible < len(items):
+            ui.mainwin.addstr(
+                base_y + len(visible) - CELL_BORDER_THICKNESS,
+                arrow_x,
+                SCROLL_INDICATOR_DOWN
+            )
+    except curses.error:
+        pass
 
 
 def _draw_day_cell(ui, editor, cell_date, theme):

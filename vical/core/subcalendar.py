@@ -3,7 +3,7 @@
 # License: MIT (see LICENSE)
 
 import uuid
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 
 class CalendarItem:
@@ -12,6 +12,8 @@ class CalendarItem:
     def __init__(self, uid: str | None, name: str, remind: bool = False):
         self.uid = uid or uuid.uuid4().hex
         self.name = name
+        # self.desc = desc
+        # self.parent_subcal = parent_subcal
         self.remind = remind
 
     def occurs_on(self, day: date) -> bool:
@@ -43,6 +45,8 @@ class Task(CalendarItem):
                  completed: bool = False, remind: bool = False):
         super().__init__(uid, name, remind)
         self.date = tdate
+        # self.time = time
+        # self.deadline = deadline
         self.completed = completed
 
     def occurs_on(self, day: date) -> bool:
@@ -81,6 +85,10 @@ class Event(CalendarItem):
 
     def occurs_on(self, day: date) -> bool:
         return self.start_date <= day <= self.end_date
+
+    @property
+    def duration(self) -> int:
+        return (self.end_date - self.start_date).days + 1
 
     @property
     def sort_date(self) -> date:

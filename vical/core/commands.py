@@ -218,8 +218,8 @@ def rename_item(editor):
         editor.redraw = True
 
     editor.prompt = {
-        "label": "Rename item: ",
-        "user_input": item.name,
+        "label": "",
+        "user_input": "",
         "on_submit": execute,
         "on_cancel": None,
     }
@@ -246,6 +246,8 @@ def delete_item(editor):
         return
 
     # store deleted item in registers
+    # TODO: refactor registers. registers should be their own class with functions
+    # instead of implemented this every time
     """
     entry = (removed.copy(), subcal)
     editor.registers['"'] = entry

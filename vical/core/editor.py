@@ -6,7 +6,11 @@ from datetime import date, timedelta
 from enum import Enum, auto
 
 from vical.storage.jsonstore import load_subcalendars
+from vical.core.register import Register
 from vical.core.state import capture_state, compute_state_id
+
+
+SPLASH_TEXT = "vical 0.01 - type :help for help or :q to quit"
 
 
 class Mode(Enum):
@@ -30,7 +34,7 @@ class Editor:
         self.operator = ""
         self.count = ""
         self.last_motion = '0'
-        self.msg = ("vical 0.01 - type :help for help or :q to quit", 0)
+        self.msg = (SPLASH_TEXT, 0)
 
         self.view = View.MONTHLY
 
@@ -42,8 +46,6 @@ class Editor:
         self.subcalendars = load_subcalendars()
         self.selected_subcal_index = 0
         self.selected_item_index = 0
-        self.item_scroll_offset = 0
-        self.max_items_visible = 0
 
         initial_state = capture_state(self)
         self.state_id = compute_state_id(self)
@@ -54,16 +56,16 @@ class Editor:
 
         self.dim_when_completed = True
         self.week_starts_on_sunday = True
+        self.week_start = 6
 
         self.redraw = True
         self.redraw_counter = 0
         self.debug = False
 
-        self.registers = {
-            '"': None,  # unnamed register
-            **{str(i): None for i in range(10)},                     # 0-9
-            **{chr(c): None for c in range(ord('a'), ord('z') + 1)}  # a-z
-        }
+        self.registers = Register()
+
+    def mark_saved(self):
+        self.saved_state_id = self.state_id
 
     @property
     def modified(self) -> bool:
@@ -77,15 +79,13 @@ class Editor:
     @property
     def selected_item(self):
         """
-        Return the currently selected calendar item for the selected day.
+        Return the currently selected calendar item.
         """
         items = self.get_items_for_selected_day()
         if not items:
             return None
         return items[self.selected_item_index % len(items)][1]
 
-    def mark_saved(self):
-        self.saved_state_id = self.state_id
 
     def get_items_for_selected_day(self):
         """
@@ -127,14 +127,12 @@ class Editor:
 
         if reset_items:
             self.selected_item_index = 0
-            self.item_scroll_offset = 0
         else:
             self.clamp_item_index()
 
         if record_motion is not None:
             self.last_motion = f"{'+' if record_motion > 0 else ''}{record_motion}"
             self.count = ""
-
 
     def max_item_index(self):
         return max(0, len(self.get_items_for_selected_day()) - 1)
@@ -150,20 +148,6 @@ class Editor:
         else:
             self.selected_item_index = 0
             self.item_scroll_offset = 0
-
-    def ensure_item_visible(self):
-        items = self.get_items_for_selected_day()
-        max_per_day = self.max_items_visible
-
-        if self.selected_item_index < self.item_scroll_offset:
-            self.item_scroll_offset = self.selected_item_index
-        elif self.selected_item_index >= self.item_scroll_offset + max_per_day:
-            self.item_scroll_offset = self.selected_item_index - max_per_day + 1
-
-        # clamp
-        max_offset = max(0, len(items) - max_per_day)
-        if self.item_scroll_offset > max_offset:
-            self.item_scroll_offset = max_offset
 
     def month_has_changed(self, new_date):
         """

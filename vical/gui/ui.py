@@ -4,7 +4,7 @@
 
 import curses
 
-from vical.core.editor import Mode
+from vical.core.editor import Mode, View
 from vical.input import keys
 from vical.input.normal import normal_input
 from vical.input.prompt import prompt_input
@@ -46,6 +46,8 @@ class CursesUI:
         self.promptwin_w = self.screen_w
         self.promptwin_y = self.mainwin_h # under mainwin
         self.promptwin_x = 0
+
+        self.day_cell_scroll_offset = 0
 
         self.theme = ThemeManager(self.stdscr)
 
@@ -89,8 +91,24 @@ class CursesUI:
         curses.flushinp()
         self.layout_update = True
 
+    def get_scroll_offset(self, num_items, max_visible, selected_index):
+        offset = self.day_cell_scroll_offset
+
+        if selected_index >= 0:
+            if selected_index >= offset + max_visible:
+                offset = selected_index - max_visible + 1
+            elif selected_index < offset:
+                offset = selected_index
+            offset = max(0, min(offset, max(0, num_items - max_visible)))
+
+        self.day_cell_scroll_offset = offset
+        return offset
+
     def _update_editor_layout(self, editor):
-        editor.max_tasks_visible = max(0, self.mainwin_hfactor - self.CAL_BORDERS)
+        if editor.view == View.WEEKLY:
+            editor.max_items_visible = max(0, self.mainwin_hfactor - self.CAL_BORDERS)
+        elif editor.view == View.MONTHLY:
+            editor.max_items_visible = max(0, self.mainwin_h - self.CAL_BORDERS)
         editor.redraw = True
         self.layout_update = False
 

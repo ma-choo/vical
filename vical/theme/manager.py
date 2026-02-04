@@ -21,9 +21,10 @@ STANDARD_COLORS = {
 
 
 DEFAULT_PAIRS = {
-    "error": "red, black",
+    "error": "red, default",
     "today": "white, blue",
     "dim":   "blue",
+    "deadline":  "red, default"
 }
 
 

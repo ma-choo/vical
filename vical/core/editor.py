@@ -7,7 +7,7 @@ from enum import Enum, auto
 
 from vical.storage.jsonstore import load_subcalendars
 from vical.core.register import Register
-from vical.core.state import capture_state, compute_state_id
+from vical.core.state import capture_state
 
 
 SPLASH_TEXT = "vical 0.01 - type :help for help or :q to quit"
@@ -44,33 +44,32 @@ class Editor:
         self.visual_anchor_date: date | None = None  # start of visual selection
 
         self.subcalendars = load_subcalendars()
+        self.subcalendar_map = {sc.uid: sc for sc in self.subcalendars}
         self.selected_subcal_index = 0
         self.selected_item_index = 0
 
-        initial_state = capture_state(self)
-        self.state_id = compute_state_id(self)
-        self.saved_state_id = self.state_id
+        self.active_state = capture_state(self)
+        self.saved_state = self.active_state
         self.undo_stack = []
         self.redo_stack = []
         self.MAX_HISTORY = 50
 
         self.dim_when_completed = True
-        self.week_starts_on_sunday = True
-        self.week_start = 6
+        self.week_start = 6 # 6 = sunday
 
         self.redraw = True
         self.redraw_counter = 0
-        self.debug = False
+        self.debug = True
 
         self.registers = Register()
+        self.selected_register = '"'
 
     def mark_saved(self):
-        self.saved_state_id = self.state_id
+        self.saved_state = self.active_state
 
     @property
-    def modified(self) -> bool:
-        """Return whether the editor state has changed from the last saved snapshot."""
-        return self.state_id != self.saved_state_id
+    def modified(self):
+        return self.active_state != self.saved_state
 
     @property
     def selected_subcal(self):
@@ -86,6 +85,20 @@ class Editor:
             return None
         return items[self.selected_item_index % len(items)][1]
 
+    def max_item_index(self):
+        return max(0, len(self.get_items_for_selected_day()) - 1)
+
+    def clamp_item_index(self):
+        """
+        Clamp the selected item index to a valid range for the selected day.
+        """
+        items = self.get_items_for_selected_day()
+        if items:
+            max_idx = len(items) - 1
+            self.selected_item_index = min(self.selected_item_index, max_idx)
+        else:
+            self.selected_item_index = 0
+            self.item_scroll_offset = 0
 
     def get_items_for_selected_day(self):
         """
@@ -107,18 +120,13 @@ class Editor:
         - VISUAL mode: visual_anchor_date is the start of the selection.
         - NORMAL mode: visual_anchor_date is cleared.
         """
-        if self.view == View.MONTHLY:
-            if self.month_has_changed(new_date):
-                self.redraw = True
-        elif self.view == View.WEEKLY:
-            if self.week_has_changed(new_date):
-                self.redraw = True
-
+        if self.view_boundary_crossed(new_date): # check if new date crosses view boundrary
+            self.redraw = True # trigger full redraw
         # handle visual anchor
+        # in visual mode selected_date is always the active end of the selection
         if self.mode == Mode.VISUAL:
             if self.visual_anchor_date is None:
                 self.visual_anchor_date = self.selected_date
-            # in visual mode, selected_date is always the "active end" of selection
         else:
             self.visual_anchor_date = None
 
@@ -134,32 +142,23 @@ class Editor:
             self.last_motion = f"{'+' if record_motion > 0 else ''}{record_motion}"
             self.count = ""
 
-    def max_item_index(self):
-        return max(0, len(self.get_items_for_selected_day()) - 1)
-
-    def clamp_item_index(self):
+    def view_boundary_crossed(self, new_date):
         """
-        Clamp the selected item index to a valid range for the selected day.
-        """
-        items = self.get_items_for_selected_day()
-        if items:
-            max_idx = len(items) - 1
-            self.selected_item_index = min(self.selected_item_index, max_idx)
-        else:
-            self.selected_item_index = 0
-            self.item_scroll_offset = 0
-
-    def month_has_changed(self, new_date):
-        """
-        Check whether a motion crosses a month or year boundary.
+        Check whether a motion crosses a week, month, or year boundary.
         Used to trigger full redraws when calendar layout changes.
         """
-        return (new_date.month != self.selected_date.month) or (new_date.year != self.selected_date.year)
+        if self.view == View.MONTHLY:
+            return (
+                new_date.month != self.selected_date.month
+                or new_date.year != self.selected_date.year
+            )
 
-    def week_has_changed(self, new_date: date) -> bool:
-        """
-        Returns True if new_date is in a different week (Sunday-Saturday) from selected_date.
-        """
-        old_start = self.selected_date - timedelta(days=(self.selected_date.weekday() + 1) % 7)
-        new_start = new_date - timedelta(days=(new_date.weekday() + 1) % 7)
-        return old_start != new_start
+        elif self.view == View.WEEKLY:
+            def week_start(d):
+                # weekday(): Monday=0 … Sunday=6
+                offset = (d.weekday() - self.week_start) % 7
+                return d - timedelta(days=offset)
+
+            old_start = week_start(self.selected_date)
+            new_start = week_start(new_date)
+            return old_start != new_start

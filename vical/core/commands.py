@@ -6,7 +6,7 @@ from datetime import date, timedelta
 
 from vical.core.editor import Mode, View
 from vical.core.subcalendar import Subcalendar, CalendarItem, Task, Event
-from vical.core.state import capture_state, apply_state, compute_state_id, undoable
+from vical.core.state import capture_state, apply_state, undoable
 from vical.storage.jsonstore import save_subcalendars
 
 
@@ -25,7 +25,7 @@ def quit(editor):
 def quit_bang(editor):
     """:quit!
 
-    Force quit the program, disregarding unsaved changes.
+    Force quit the program, disregard unsaved changes.
     """
     raise SystemExit
 
@@ -40,7 +40,7 @@ def write(editor):
     except Exception as e:
         editor.msg = (f"{e}", 1)
     editor.mark_saved()
-    editor.msg = ("Changes saved", 0)
+    editor.msg = ("Write successful", 0)
 
 
 def write_quit(editor):
@@ -49,8 +49,7 @@ def write_quit(editor):
     Save changes and quit
     """
     write(editor)
-    if not editor.modified:
-        raise SystemExit
+    quit(editor)
 
 
 def undo(editor):
@@ -61,14 +60,14 @@ def undo(editor):
     if not editor.undo_stack:
         editor.msg = ("Nothing to undo", 1)
         return
+
     # save current state for redo
-    current = capture_state(editor)
-    editor.redo_stack.append((current, compute_state_id(current)))
+    current_state = capture_state(editor)
+    editor.redo_stack.append(current_state)
+
     # pop previous state and apply
-    prev_state, _ = editor.undo_stack.pop()
+    prev_state = editor.undo_stack.pop()
     apply_state(editor, prev_state)
-    # recompute change_id from the state we just applied
-    editor.state_id = compute_state_id(prev_state)
     editor.msg = ("Undo", 0)
 
 
@@ -82,15 +81,12 @@ def redo(editor):
         return
 
     # save current state for undo
-    current = capture_state(editor)
-    editor.undo_stack.append((current, compute_state_id(current)))
+    current_state = capture_state(editor)
+    editor.undo_stack.append(current_state)
 
     # pop redo state and apply
-    redo_state, _ = editor.redo_stack.pop()
+    redo_state = editor.redo_stack.pop()
     apply_state(editor, redo_state)
-
-    # recompute change_id from the state we just applied
-    editor.change_id = compute_state_id(redo_state)
 
     editor.msg = ("Redo", 0)
 
@@ -193,6 +189,8 @@ def mark_complete(editor):
     except Exception as e:
         editor.msg = (f"Failed to mark complete '{item.name}': {e}", 1)
 
+    editor.redraw = True
+
 
 def rename_item(editor):
     """:renameitem
@@ -236,26 +234,14 @@ def delete_item(editor):
         editor.msg = ("No item selected", 1)
         return
 
-    subcal = editor.selected_subcal
-
     try:
         with undoable(editor):
-            removed = subcal.remove_item(item)
+            removed = item.remove()
     except Exception as e:
         editor.msg = (f"Failed to delete item '{item.name}': {e}", 1)
         return
 
-    # store deleted item in registers
-    # TODO: refactor registers. registers should be their own class with functions
-    # instead of implemented this every time
-    """
-    entry = (removed.copy(), subcal)
-    editor.registers['"'] = entry
-    editor.registers['1'] = entry
-    for i in range(9, 1, -1):
-        editor.registers[str(i)] = editor.registers.get(str(i - 1))
-    """
-
+    editor.registers.set(removed)  # store just the item
     editor.msg = (f"Deleted '{removed.name}'", 0)
     editor.redraw = True
     editor.clamp_item_index()
@@ -270,63 +256,80 @@ def yank_item(editor):
     if not item:
         editor.msg = ("No item selected", 1)
         return
-
-    entry = (item.copy(), editor.selected_subcal)
-    editor.registers['"'] = entry
-    editor.registers['0'] = entry
-    editor.msg = (f"Yanked '{item.name}'", 0)
+    editor.registers.set(item)
 
 
-def paste_item(editor):
+def _resolve_date_selection(editor, event: Event):
+    """
+    Return start_date, end_date for a pasted event.
+    """
+    # visual selection: pasted event dates cover visual selection
+    if editor.visual_anchor_date:
+        start = min(editor.visual_anchor_date, editor.selected_date)
+        end = max(editor.visual_anchor_date, editor.selected_date)
+        return start, end
+
+    # normal selection: preserve original duration
+    start = editor.selected_date
+    end = start + timedelta(days=event.duration - 1)
+    return start, end
+
+
+def _paste_item(editor, original_subcal=True):
+    """
+    Resolve a calendar item from a register payload
+    and paste it into a target subcalendar.
+    """
+    payload = editor.registers.get(editor.selected_register)
+    if not payload:
+        editor.msg = ("Nothing to paste", 1)
+        return
+
+    # build item from payload
+    item = CalendarItem.from_register(payload)
+
+    # determine target subcalendar
+    if original_subcal:
+        uid = payload.data.get("original_subcal_uid")
+        target_subcal = editor.subcalendar_map.get(uid)
+    else:
+        target_subcal = editor.selected_subcal
+
+    if not target_subcal:
+        editor.msg = ("Subcalendar doesn't exist", 1)
+        return
+
+    # assign dates
+    if isinstance(item, Task):
+        item.date = editor.selected_date # tasks are always pasted on the selected date
+    elif isinstance(item, Event):
+        item.start_date, item.end_date = _resolve_date_selection(editor, item) # resolve date selection for smart event paste
+
+    try:
+        with undoable(editor):
+            item.insert_into(target_subcal)
+    except Exception as e:
+        editor.msg = (f"Failed to paste '{item.name}': {e}", 1)
+        return
+
+    editor.msg = (f"Pasted '{item.name}' into '{target_subcal.name}'", 0)
+    editor.redraw = True
+
+
+def paste_item_original_subcal(editor):
     """:paste
 
-    Paste an item from the register into its original subcalendar.
+    Paste a calendar item into its original subcalendar.
     """
-    reg = editor.registers['"']
-    if not reg:
-        editor.msg = ("Nothing to paste", 1)
-        return
-
-    item, original_subcal = reg
-    new_item = item.copy()
-    new_item.date = editor.selected_date
-
-    target = original_subcal
-    try:
-        with undoable(editor):
-            target.insert_item(new_item)
-    except Exception as e:
-        editor.msg = (f"Failed to paste item '{item.name}': {e}", 1)
-        return
-
-    editor.msg = (f"Pasted '{item.name}' into '{target.name}'", 0)
-    editor.redraw = True
+    _paste_item(editor, original_subcal=True)
 
 
-def paste_item_to_selected_subcal(editor):
-    """:paste2
+def paste_item_selected_subcal(editor):
+    """:paste
 
-    Paste an item from the register into the currently selected subcalendar.
+    Paste a calendar item into the currently selected subcalendar.
     """
-    reg = editor.registers['"']
-    if not reg:
-        editor.msg = ("Nothing to paste", 1)
-        return
-
-    item, original_subcal = reg
-    new_item = item.copy()
-    new_item.date = editor.selected_date
-
-    target = editor.selected_subcal
-    try:
-        with undoable(editor):
-            target.insert_item(new_item)
-    except Exception as e:
-        editor.msg = (f"Failed to paste item '{item.name}': {e}", 1)
-        return
-
-    editor.msg = (f"Pasted '{item.name}' into '{target.name}'", 0)
-    editor.redraw = True
+    _paste_item(editor, original_subcal=False)
 
 
 # ---SUBCALENDARS---

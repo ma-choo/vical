@@ -40,7 +40,7 @@ def _get_first_weekday(editor) -> int:
 def _get_start_of_week(d: date, editor) -> date:
     """
     Given a date, return the date of the first day of that week
-    according to editor.week_starts_on_sunday.
+    according to editor.week_start.
     """
     first_weekday = _get_first_weekday(editor)
     delta = (d.weekday() - first_weekday) % 7
@@ -67,7 +67,7 @@ def _draw_prompt_status(ui, editor, theme):
         f"{f'  {editor.count}' if editor.count else ''}"
         f"{f'  {editor.mode} ' if not editor.mode == Mode.NORMAL else ' '}"
         f"  {editor.last_motion}"
-        f"{f' {editor.saved_state_id[:4]} {editor.state_id[:4]}' if editor.debug else ''}"
+        f"{f' {editor.saved_state._id[:4]} {editor.active_state._id[:4]}' if editor.debug else ''}"
         f"{f'  {editor.redraw} {editor.redraw_counter}' if editor.debug else ''}"
         f"  {'[H]' if editor.selected_subcal.hidden else ''}"
     )
@@ -164,8 +164,8 @@ DAY_HEADER_ROWS = 1
 CELL_RIGHT_PADDING = 2
 CELL_BORDER_THICKNESS = 1
 SELECTION_MARKER = ">"
-EVENT_UNCOMPLETED_MARKER = "󰄰 "
-EVENT_COMPLETED_MARKER = "󰄳 "
+TASK_COMPLETED_MARKER = "󰄳 "
+TASK_UNCOMPLETED_MARKER = "󰄰 "
 EVENT_RIBBON_START = ""
 EVENT_RIBBON_END = ""
 SCROLL_INDICATOR_UP = '▲'
@@ -209,7 +209,7 @@ def _draw_day_cell_monthly(ui, editor, cell_date, theme):
         attr |= curses.color_pair(theme.pair("dim"))
     if cell_date == today:
         attr |= curses.color_pair(theme.pair("today"))
-
+    # highlight selected day
     start, end = _get_selection_range(editor)
     if start <= cell_date <= end:
         attr = curses.A_REVERSE
@@ -246,7 +246,7 @@ def _draw_day_cell_monthly(ui, editor, cell_date, theme):
     for i, (cal, item) in enumerate(visible):
         y = base_y + i
 
-        # ---------------- EVENTS ----------------
+        # ---- EVENTS ----
         if isinstance(item, Event):
             base_attr = curses.color_pair(theme.pair(cal.color)) | curses.A_REVERSE
 
@@ -254,7 +254,7 @@ def _draw_day_cell_monthly(ui, editor, cell_date, theme):
             text_x = pos_x + (len(SELECTION_MARKER) if is_selected else 0)
             text_w = cell_w - (text_x - pos_x)
 
-            # background ribbon (ALWAYS full width)
+            # background ribbon
             try:
                 ui.mainwin.attron(base_attr)
                 ui.mainwin.addstr(y, pos_x, " " * cell_w)
@@ -265,18 +265,18 @@ def _draw_day_cell_monthly(ui, editor, cell_date, theme):
             # ribbon text
             if _is_event_text_visible(editor, cell_date, item):
                 if cell_date == item.start_date or is_selected:
-                    text = EVENT_RIBBON_START + " " + item.name
+                    event_text = f"{EVENT_RIBBON_START} {item.name}"
                 else:
-                    text = " " + item.name
+                    event_text = f" {item.name}"
 
                 try:
                     ui.mainwin.attron(base_attr)
-                    ui.mainwin.addstr(y, text_x, text[:text_w])
+                    ui.mainwin.addstr(y, text_x, event_text[:text_w])
                     ui.mainwin.attroff(base_attr)
                 except curses.error:
                     pass
 
-            # ribbon end cap (NO reverse, true cell edge)
+            # ribbon end cap (no reverse)
             if cell_date == item.end_date:
                 end_attr = curses.color_pair(theme.pair(cal.color))
                 end_x = pos_x + cell_w - len(EVENT_RIBBON_END)
@@ -287,37 +287,44 @@ def _draw_day_cell_monthly(ui, editor, cell_date, theme):
                 except curses.error:
                     pass
 
-            # selection marker
             if is_selected:
                 try:
                     ui.mainwin.addstr(y, pos_x, SELECTION_MARKER)
                 except curses.error:
                     pass
 
-            continue
+        # ---- TASKS ----
+        elif isinstance(item, Task):
+            attr = 0
+            marker = TASK_UNCOMPLETED_MARKER
+            label=""
+            if cell_date == item.deadline:
+                    attr = curses.color_pair(theme.pair("deadline"))
+                    label = "Due:"
+            else:
+                attr = curses.color_pair(theme.pair(cal.color))
+
+            if item.completed:
+                attr = curses.color_pair(theme.pair("dim"))
+                marker = TASK_COMPLETED_MARKER
 
 
-        # ---------------- TASKS ----------------
-        attr = curses.color_pair(theme.pair(cal.color))
-        if item.completed and editor.dim_when_completed:
-            attr = curses.color_pair(theme.pair("dim"))
+            task_text = f"{marker}{label}{item.name}"
 
-        text = f"{EVENT_COMPLETED_MARKER if item.completed else EVENT_UNCOMPLETED_MARKER}{item.name}"
+            draw_x = pos_x
+            if cell_date == selected_date and item_is_selected(i):
+                try:
+                    ui.mainwin.addstr(y, pos_x, SELECTION_MARKER)
+                except curses.error:
+                    pass
+                draw_x += len(SELECTION_MARKER)
 
-        draw_x = pos_x
-        if cell_date == selected_date and item_is_selected(i):
             try:
-                ui.mainwin.addstr(y, pos_x, SELECTION_MARKER)
+                ui.mainwin.attron(attr)
+                ui.mainwin.addstr(y, draw_x, task_text[:cell_w - (draw_x - pos_x)])
+                ui.mainwin.attroff(attr)
             except curses.error:
                 pass
-            draw_x += len(SELECTION_MARKER)
-
-        try:
-            ui.mainwin.attron(attr)
-            ui.mainwin.addstr(y, draw_x, text[:cell_w - (draw_x - pos_x)])
-            ui.mainwin.attroff(attr)
-        except curses.error:
-            pass
 
     # scroll indicators
     try:
@@ -396,7 +403,7 @@ def _draw_day_cell_weekly(ui, editor, cell_date, theme):
     for i, (cal, item) in enumerate(visible):
         y = base_y + i
 
-        # ---------------- EVENTS ----------------
+        # ---- EVENTS ----
         if isinstance(item, Event):
             base_attr = curses.color_pair(theme.pair(cal.color)) | curses.A_REVERSE
             is_selected = (cell_date == selected_date and item_is_selected(i))
@@ -444,7 +451,7 @@ def _draw_day_cell_weekly(ui, editor, cell_date, theme):
 
             continue
 
-        # ---------------- TASKS ----------------
+        # ---- TASKS ----
         attr = curses.color_pair(theme.pair(cal.color))
         if getattr(item, "completed", False) and editor.dim_when_completed:
             attr = curses.color_pair(theme.pair("dim"))

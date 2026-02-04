@@ -19,7 +19,7 @@ def move(editor, motion, count=None):
 
 def goto(editor):
     """
-    Goto a specific date using editor.count as a date destination,
+    Goto a specific date using count as a date destination,
     or jump back to today if count is empty.
     """
     date_str = editor.count
@@ -50,7 +50,6 @@ def goto(editor):
         editor.msg = (f"Invalid date: {date_str}", 1)
 
 
-# --- Basic day/week movements ---
 def left(editor, count=1):
     new_date = editor.selected_date - timedelta(days=count)
     editor.set_selected_date(new_date, reset_items=True, record_motion=-count)

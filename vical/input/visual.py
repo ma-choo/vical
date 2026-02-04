@@ -5,7 +5,7 @@
 from vical.core.editor import Mode
 from vical.input import keys
 from vical.core import movement
-from vical.core.commands import new_event
+from vical.core.commands import new_event, paste_item_original_subcal, paste_item_selected_subcal
 
 
 MOTIONS = {
@@ -23,18 +23,31 @@ def visual_input(editor, key):
     ESC exits visual mode.
     """
     # ESC exits visual mode
-    if key == keys.ESC:
+    def escape():
         editor.mode = Mode.NORMAL
         editor.visual_anchor_date = None
+        editor.count = ""
         editor.redraw = True
         return
+
+    if key == keys.ESC:
+        escape()
 
     if ord('0') <= key <= ord('9'):
         editor.count += chr(key)
         return
 
-    if key == ord('e'):
+    if key == ord('E'):
         new_event(editor)
+        escape()
+
+    if key == ord('p'):
+        paste_item_original_subcal(editor)
+        escape()
+
+    if key == ord('P'):
+        paste_item_selected_subcal(editor)
+        escape()
 
     if key in MOTIONS:
         movement.move(editor, MOTIONS[key])

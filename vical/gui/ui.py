@@ -8,7 +8,6 @@ from vical.core.editor import Mode, View
 from vical.input import keys
 from vical.input.normal import normal_input
 from vical.input.prompt import prompt_input
-from vical.input.command import command_input
 from vical.input.visual import visual_input
 from vical.input.operator import operator_pending_input
 from vical.theme.manager import ThemeManager
@@ -18,6 +17,7 @@ from vical.gui.draw import draw_screen
 class CursesUI:
     CAL_ROWS = 6
     CAL_COLS = 7
+    STATUS_ROWS = 1
     PROMPT_ROWS = 1
     CAL_BORDERS = 2
 
@@ -41,10 +41,16 @@ class CursesUI:
         self.mainwin_y = 0
         self.mainwin_x = 0
 
-        # promptwin - single full-width line at the bottom of the screen
+        # promptwin - single full-width line under mainwin
+        self.statuswin_h = self.STATUS_ROWS
+        self.statuswin_w = self.screen_w
+        self.statuswin_y = self.mainwin_h # under mainwin
+        self.statuswin_x = 0
+
+        # promptwin - single full-width line under statuswin
         self.promptwin_h = self.PROMPT_ROWS
         self.promptwin_w = self.screen_w
-        self.promptwin_y = self.mainwin_h # under mainwin
+        self.promptwin_y = self.mainwin_h # + 1 # under statuswin # under mainwin
         self.promptwin_x = 0
 
         self.day_cell_scroll_offset = 0
@@ -52,6 +58,7 @@ class CursesUI:
         self.theme = ThemeManager(self.stdscr)
 
         self.layout_update = True
+        self.need_redraw = True
 
         self.init_windows()
         self.stdscr.refresh()
@@ -91,6 +98,9 @@ class CursesUI:
         curses.flushinp()
         self.layout_update = True
 
+    self.request_redraw():
+    self.need_redraw = True
+
     def get_scroll_offset(self, num_items, max_visible, selected_index):
         offset = self.day_cell_scroll_offset
 
@@ -122,12 +132,10 @@ class CursesUI:
                 match editor.mode:
                     case Mode.NORMAL:
                         normal_input(editor, key)
-                    case Mode.COMMAND:
-                        command_input(self, editor, key)
                     case Mode.PROMPT:
                         prompt_input(self, editor, key)
                     case Mode.VISUAL:
-                        visual_input(editor, key)
+                        normal_input(editor, key)
                     case Mode.OPERATOR_PENDING:
                         operator_pending_input(editor, key)
 

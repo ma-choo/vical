@@ -2,6 +2,13 @@
 # This file is part of vical.
 # License: MIT (see LICENSE)
 
+"""A terminal calendar and task manager with Vim-style keybindings.
+
+Provides a minimal curses interface for navigating subcalendars, managing tasks
+and events, and performing Vim-like operations (yank, paste, visual selection,
+operator motions, undo/redo).
+"""
+
 import curses
 
 from vical.gui.ui import CursesUI

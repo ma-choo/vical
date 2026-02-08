@@ -4,7 +4,8 @@
 
 from vical.core.editor import Mode
 from vical.input import keys
-from vical.core import movement, commands
+from vical.input.command import execute_command
+from vical.core import movement
 
 
 OPERATOR_KEYS = {}
@@ -26,16 +27,24 @@ def register_normal_key(key, func):
 
 def normal_input(editor, key):
     """Handle a single keypress in NORMAL mode."""
-
     # ESC always resets
     if key == keys.ESC:
+        editor.mode = Mode.NORMAL
         editor.operator = ""
         editor.count = ""
+        editor.visual_anchor_date = None
+        editor.redraw = True
         return
 
-    # ':' enters command mode
+    # command mode
     if key == ord(':'):
-        editor.mode = Mode.COMMAND
+        editor.prompt = {
+            "label": ":",
+            "user_input": "",
+            "on_submit": lambda cmd: execute_command(editor, cmd),
+        }
+        editor.mode = Mode.PROMPT
+        editor.redraw = True
         return
 
     # counts
@@ -43,6 +52,7 @@ def normal_input(editor, key):
         editor.count += chr(key)
         return
 
+    # visual mode
     if key == ord('v'):
         editor.mode = Mode.VISUAL
         return
@@ -59,7 +69,7 @@ def normal_input(editor, key):
         editor.count = ""
         return
 
-    # simple commands
+    # normal keys
     action = NORMAL_KEYS.get(key)
     if action:
         action(editor)

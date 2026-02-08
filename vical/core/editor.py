@@ -1,16 +1,50 @@
-# editor.py - Editor state.
+# editor.py - Editor state management for vical
 # This file is part of vical.
 # License: MIT (see LICENSE)
+
+"""
+The Editor class centralizes the state and behavior of the vical interface.
+It manages:
+  Current mode (NORMAL, INSERT, VISUAL, OPERATOR_PENDING, COMMAND, PROMPT)
+  Current view (MONTHLY, WEEKLY)
+  Selected date and visual selection ranges
+  Subcalendars and calendar items
+  Registers for yanked items
+  Undo/redo history
+
+Selection:
+  visual_anchor_date marks the start of a selection.
+  selected_date always represents the active end of the selection.
+  In NORMAL mode, no anchor is set; selection is a single date.
+  The editor redraw logic relies on the anchor to render full selection ranges.
+
+Calendar items:
+  selected_item refers to the currently highlighted task or event on the selected date.
+  Helper functions retrieve all visible items for a given date.
+  Indices and scrolling are clamped to ensure valid selections.
+
+Registers:
+  registers store yanked CalendarItems as immutable payloads.
+  Supports unnamed ('"') and numbered (1-9) registers with Vim-like rotation.
+
+Undo/redo:
+    - Transactions group multiple operations into a single atomic change.
+    - `_current_tx` tracks the active transaction.
+    - `undo_stack` and `redo_stack` implement a bounded history with `MAX_HISTORY`.
+    - Changes to CalendarItems are recorded as operations and replayed or reverted.
+
+- Redraw:
+  `redraw` controls full and partial screen updates.
+  This happens when a movement crosses a screen boundary or another action that warrants
+  a full redraw, like adding or removing calendar items.
+"""
 
 from datetime import date, timedelta
 from enum import Enum, auto
 
+from vical.store.settings import Settings
 from vical.storage.jsonstore import load_subcalendars
 from vical.core.register import Register
-from vical.core.state import capture_state
-
-
-SPLASH_TEXT = "vical 0.01 - type :help for help or :q to quit"
 
 
 class Mode(Enum):
@@ -22,9 +56,7 @@ class Mode(Enum):
     PROMPT = auto()
 
 
-class View(Enum):
-    MONTHLY = auto()
-    WEEKLY = auto()
+SPLASH_TEXT = "vical v0.1 - Type :help for help or :q to quit"
 
 
 class Editor:
@@ -36,40 +68,62 @@ class Editor:
         self.last_motion = '0'
         self.msg = (SPLASH_TEXT, 0)
 
-        self.view = View.MONTHLY
-
         self.selected_date = date.today()
         self.last_selected_date = self.selected_date
-        self.first_visible_date = None
         self.visual_anchor_date: date | None = None  # start of visual selection
+        self.last_visual_anchor_date = None
+        self.first_visible_date = None
 
         self.subcalendars = load_subcalendars()
         self.subcalendar_map = {sc.uid: sc for sc in self.subcalendars}
         self.selected_subcal_index = 0
         self.selected_item_index = 0
 
-        self.active_state = capture_state(self)
-        self.saved_state = self.active_state
+        self.active_state = None
+        self.saved_state = None
+        self._current_tx = None
+        self._saved_tx = None
         self.undo_stack = []
         self.redo_stack = []
         self.MAX_HISTORY = 50
 
-        self.dim_when_completed = True
-        self.week_start = 6 # 6 = sunday
-
         self.redraw = True
         self.redraw_counter = 0
-        self.debug = True
 
         self.registers = Register()
         self.selected_register = '"'
 
+        self.settings = Settings()
+
+    def set_msg(self, msg, error=0): # TODO: this function name is not honest
+        self.msg = (msg, error)
+
+    def mark_for_redraw(self):
+        self.redraw = True
+
     def mark_saved(self):
-        self.saved_state = self.active_state
+        """Mark current state as saved. Used for dirty checking."""
+        if self.undo_stack:
+            self._saved_tx = self.undo_stack[-1]
+        else:
+            self._saved_tx = None
 
     @property
-    def modified(self):
-        return self.active_state != self.saved_state
+    def dirty(self):
+        """Return True if the editor has unsaved changes."""
+        if not self.undo_stack:
+            return False
+        return self._saved_tx is not self.undo_stack[-1]
+
+    def get_item_by_uid(self, uid: str) -> CalendarItem | None:
+        for sc in self.subcalendars:
+            for item in sc.items:
+                if item.uid == uid:
+                    return item
+        return None
+
+    def get_subcal_by_uid(self, uid: str) -> Subcalendar | None:
+        return self.subcalendar_map.get(uid)
 
     @property
     def selected_subcal(self):
@@ -162,3 +216,53 @@ class Editor:
             old_start = week_start(self.selected_date)
             new_start = week_start(new_date)
             return old_start != new_start
+
+    # ---- history ----
+    """
+    def begin_transaction(self, label=""):
+        if hasattr(self, "_current_tx") and self._current_tx is not None:
+            raise RuntimeError("Nested transactions are not allowed")
+        self._current_tx = Transaction(label)
+
+    def record(self, op: Op):
+        if not hasattr(self, "_current_tx") or self._current_tx is None:
+            raise RuntimeError("record() called outside of transaction")
+        self._current_tx.ops.append(op)
+
+    def commit_transaction(self):
+        if not hasattr(self, "_current_tx") or self._current_tx is None:
+            return
+        if not self._current_tx.ops:
+            self._current_tx = None
+            return
+        self.undo_stack.append(self._current_tx)
+        self.redo_stack.clear()
+        if len(self.undo_stack) > self.MAX_HISTORY:
+            self.undo_stack.pop(0)
+        self._current_tx = None
+
+    def set_attr(self, item, attr, new):
+        old = getattr(item, attr)
+        if old == new:
+            return
+
+        self.record(OpSetAttr(item.uid, attr, old, new))
+        setattr(item, attr, new)
+
+    
+    def undo(self):
+        if not self.undo_stack:
+            return
+        tx = self.undo_stack.pop()
+        tx.revert(self)
+        self.redo_stack.append(tx)
+        self.redraw = True
+
+    def redo(self):
+        if not self.redo_stack:
+            return
+        tx = self.redo_stack.pop()
+        tx.apply(self)
+        self.undo_stack.append(tx)
+        self.redraw = True
+    """

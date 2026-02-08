@@ -58,35 +58,48 @@ def _draw_prompt_status(ui, editor, theme):
     """
     Draw prompt/status line
     """
-    msg, is_error = editor.msg
     curses.curs_set(0)
-    # build the status line
-    status_prefix = (
-        f"{'[+]' if editor.modified else ''}"
-        f"{f'  {editor.operator} ' if editor.operator else ' '}"
-        f"{f'  {editor.count}' if editor.count else ''}"
-        f"{f'  {editor.mode} ' if not editor.mode == Mode.NORMAL else ' '}"
-        f"  {editor.last_motion}"
-        f"{f' {editor.saved_state._id[:4]} {editor.active_state._id[:4]}' if editor.debug else ''}"
-        f"{f'  {editor.redraw} {editor.redraw_counter}' if editor.debug else ''}"
-        f"  {'[H]' if editor.selected_subcal.hidden else ''}"
-    )
+    ui.promptwin.erase()
+
+    msg, is_error = editor.msg
+    dirty = f"{'[+]  ' if editor.dirty else ''}"
+    operator = f"{f'{editor.operator}  ' if editor.operator else ' '}"
+    count = f"{f'{editor.count}  ' if editor.count else ''}"
+    last_motion = f"{editor.last_motion}  "
+    hidden = f"{'[H]' if editor.selected_subcal.hidden else ''}"
+
+    status_prefix = f"{operator}{count}{last_motion}{dirty}{hidden}"
 
     subcal_name = editor.selected_subcal.name
-    ui.promptwin.erase()
 
     try:
         # display selected item if any
-        # if editor.selected_item:
-        #     ui.promptwin.addstr(0, 0, editor.selected_item.name)
+        item = editor.selected_item
+        if item:
+            attr = curses.color_pair(theme.pair(item.parent_subcal.color))
+            if isinstance(item, Event):
+                attr |= curses.A_REVERSE
+                ui.promptwin.attron(attr)
+                ui.promptwin.addstr(0, 0, f"{EVENT_RIBBON_START} {item.name} ")
+                ui.promptwin.attroff(attr)
+                attr = curses.color_pair(theme.pair(item.parent_subcal.color))
+                ui.promptwin.attron(attr)
+                ui.promptwin.addstr(f"{EVENT_RIBBON_END}")
+                ui.promptwin.attroff(attr)
+            else:
+                ui.promptwin.attron(attr)
+                ui.promptwin.addstr(0, 0, item.name)
+                ui.promptwin.attroff(attr)
 
         # else:
-        if is_error:
+        if editor.mode == Mode.VISUAL:
+            ui.promptwin.addstr("-- VISUAL --")
+        elif is_error:
             _attron(ui.promptwin, theme, "error")
-            ui.promptwin.addstr(0, 0, f"ERROR: {msg}")
+            ui.promptwin.addstr(f"ERROR: {msg}")
             _attroff(ui.promptwin, theme, "error")
         else:
-            ui.promptwin.addstr(0, 0, msg)
+            ui.promptwin.addstr(msg)
 
         # draw uncolored part of status line
         right_x = ui.mainwin_w - (len(status_prefix) + len(subcal_name))
@@ -149,7 +162,7 @@ def _get_selection_range(editor):
     - Normal mode: start == end == selected_date
     - Visual mode: anchor and selected_date define the range
     """
-    if editor.mode == Mode.VISUAL and editor.visual_anchor_date is not None:
+    if editor.visual_anchor_date is not None:
         start = min(editor.visual_anchor_date, editor.selected_date)
         end = max(editor.visual_anchor_date, editor.selected_date)
     else:
@@ -178,9 +191,6 @@ def _is_event_text_visible(editor, cell_date, item):
         cell_date == item.start_date or
         cell_date.weekday() == editor.week_start
     )
-
-
-# def _draw_day_cell_monthly(ui, editor, cell_date, theme): today = date.today() selected_date = editor.selected_date editor.max_items_visible = ui.mainwin_hfactor - (DAY_HEADER_ROWS + CELL_BORDER_THICKNESS) idx = (cell_date - editor.first_visible_date).days pos_y = (idx // 7) * ui.mainwin_hfactor + CELL_INSET_Y pos_x = (idx % 7) * ui.mainwin_wfactor + CELL_INSET_X base_y = pos_y + DAY_HEADER_ROWS arrow_x = pos_x + ui.mainwin_wfactor - CELL_RIGHT_PADDING cell_w = ui.mainwin_wfactor - CELL_BORDER_THICKNESS cell_h = ui.mainwin_hfactor - CELL_BORDER_THICKNESS # clear cell for r in range(cell_h): try: ui.mainwin.addstr(pos_y + r, pos_x, " " * cell_w) except curses.error: pass # day number attr = 0 if cell_date.month != selected_date.month: attr |= curses.color_pair(theme.pair("dim")) if cell_date == today: attr |= curses.color_pair(theme.pair("today")) start, end = _get_selection_range(editor) if start <= cell_date <= end: attr = curses.A_REVERSE try: ui.mainwin.attron(attr) ui.mainwin.addstr(pos_y, pos_x, f"{cell_date.day:>{cell_w}}") ui.mainwin.attroff(attr) except curses.error: pass # collect items items = [] for cal in editor.subcalendars: if cal.hidden: continue for item in cal.items: if item.occurs_on(cell_date): items.append((cal, item)) scroll_offset = editor.item_scroll_offset if cell_date == selected_date else 0 visible = items[scroll_offset:scroll_offset + editor.max_items_visible] selected_index = editor.selected_item_index if cell_date == selected_date else -1 def item_is_selected(i): return (scroll_offset + i) == selected_index # draw items for i, (cal, item) in enumerate(visible): y = base_y + i # ---------------- EVENTS ---------------- if isinstance(item, Event): base_attr = curses.color_pair(theme.pair(cal.color)) | curses.A_REVERSE is_selected = (cell_date == selected_date and item_is_selected(i)) text_x = pos_x + (len(SELECTION_MARKER) if is_selected else 0) text_w = cell_w - (text_x - pos_x) # background ribbon (ALWAYS full width) try: ui.mainwin.attron(base_attr) ui.mainwin.addstr(y, pos_x, " " * cell_w) ui.mainwin.attroff(base_attr) except curses.error: pass # ribbon text if _is_event_text_visible(editor, cell_date, item): if cell_date == item.start_date or is_selected: text = EVENT_RIBBON_START + " " + item.name else: text = " " + item.name try: ui.mainwin.attron(base_attr) ui.mainwin.addstr(y, text_x, text[:text_w]) ui.mainwin.attroff(base_attr) except curses.error: pass # ribbon end cap (NO reverse, true cell edge) if cell_date == item.end_date: end_attr = curses.color_pair(theme.pair(cal.color)) end_x = pos_x + cell_w - len(EVENT_RIBBON_END) try: ui.mainwin.attron(end_attr) ui.mainwin.addstr(y, end_x, EVENT_RIBBON_END) ui.mainwin.attroff(end_attr) except curses.error: pass # selection marker OVERLAY (last) if is_selected: try: ui.mainwin.addstr(y, pos_x, SELECTION_MARKER) except curses.error: pass continue # ---------------- TASKS ---------------- attr = curses.color_pair(theme.pair(cal.color)) if item.completed and editor.dim_when_completed: attr = curses.color_pair(theme.pair("dim")) text = f"{EVENT_COMPLETED_MARKER if item.completed else EVENT_UNCOMPLETED_MARKER}{item.name}" draw_x = pos_x if cell_date == selected_date and item_is_selected(i): try: ui.mainwin.addstr(y, pos_x, SELECTION_MARKER) except curses.error: pass draw_x += len(SELECTION_MARKER) try: ui.mainwin.attron(attr) ui.mainwin.addstr(y, draw_x, text[:cell_w - (draw_x - pos_x)]) ui.mainwin.attroff(attr) except curses.error: pass # scroll indicators try: if scroll_offset > 0: ui.mainwin.addstr(base_y, arrow_x, SCROLL_INDICATOR_UP) if scroll_offset + editor.max_items_visible < len(items): ui.mainwin.addstr( base_y + len(visible) - CELL_BORDER_THICKNESS, arrow_x, SCROLL_INDICATOR_DOWN ) except curses.error: pass
 
 
 def _draw_day_cell_monthly(ui, editor, cell_date, theme):
@@ -525,7 +535,67 @@ def _draw_full_week(ui, editor, theme):
         _draw_day_cell_weekly(ui, editor, cell_date, theme)
 
 
+from datetime import timedelta
+from vical.core.editor import Mode, View
+
+
 def draw_screen(ui, editor, theme):
+    """
+    Render the entire screen.
+    """
+
+    # --- current selection range ---
+    sel_start, sel_end = _get_selection_range(editor)
+
+    # --- previous selection range ---
+    if editor.last_visual_anchor_date is not None:
+        old_start = min(editor.last_visual_anchor_date, editor.last_selected_date)
+        old_end   = max(editor.last_visual_anchor_date, editor.last_selected_date)
+    else:
+        old_start = old_end = editor.last_selected_date
+
+    # --- FULL REDRAW ---
+    if editor.redraw:
+        if editor.view == View.MONTHLY:
+            _draw_full_month(ui, editor, theme)
+        elif editor.view == View.WEEKLY:
+            _draw_full_week(ui, editor, theme)
+
+        ui.stdscr.refresh()
+
+    # --- PARTIAL REDRAW ---
+    else:
+        redraw_start = min(old_start, sel_start)
+        redraw_end   = max(old_end, sel_end)
+
+        d = redraw_start
+        while d <= redraw_end:
+            _draw_day_cell(ui, editor, d, theme)
+            d += timedelta(days=1)
+
+    # --- PROMPT / STATUS OVERLAY ---
+    if editor.mode == Mode.PROMPT and editor.prompt:
+        text = editor.prompt["label"] + editor.prompt["user_input"]
+        update_promptwin(ui, text)
+
+        curses.curs_set(1)
+        ui.promptwin.move(0, len(text))
+    else:
+        curses.curs_set(0)
+        _draw_prompt_status(ui, editor, theme)
+
+    ui.mainwin.noutrefresh()
+    ui.promptwin.noutrefresh()
+    curses.doupdate()
+
+    # --- snapshot selection state for next frame ---
+    editor.last_selected_date = editor.selected_date
+    editor.last_visual_anchor_date = editor.visual_anchor_date
+
+    editor.redraw = False
+
+
+def draw_screen_old(ui, editor, theme):
     """
     Render the entire screen.
     """
@@ -544,37 +614,14 @@ def draw_screen(ui, editor, theme):
             _draw_day_cell(ui, editor, editor.last_selected_date, theme)
         _draw_day_cell(ui, editor, editor.selected_date, theme)
 
-    if editor.mode is Mode.PROMPT and editor.prompt:
-        update_promptwin(ui, editor.prompt["label"] + editor.prompt["user_input"])
+    if editor.mode == Mode.PROMPT and editor.prompt:
+        text = editor.prompt["label"] + editor.prompt["user_input"]
+        update_promptwin(ui, text)
+
+        curses.curs_set(1)
+        ui.promptwin.move(0, len(text))
     else:
-        _draw_prompt_status(ui, editor, theme)
-
-    ui.mainwin.noutrefresh()
-    ui.promptwin.noutrefresh()
-    curses.doupdate()
-    
-    editor.redraw = False
-
-
-def draw_screen_old(ui, editor, theme):
-    """
-    Render the entire screen.
-    Performs a full redraw when required, otherwise updates only affected day cells.
-    """
-    if editor.redraw:
-        _draw_full_grid(ui, editor, theme)
-        editor.redraw_counter += 1
-        ui.stdscr.refresh()
-        editor.last_selected_date = editor.selected_date
-    else:
-        # redraw only necessary day cells
-        if editor.last_selected_date != editor.selected_date:
-            _draw_day_cell(ui, editor, editor.last_selected_date, theme)
-        _draw_day_cell(ui, editor, editor.selected_date, theme)
-
-    if editor.mode is Mode.PROMPT and editor.prompt:
-        update_promptwin(ui, editor.prompt["label"] + editor.prompt["user_input"])
-    else:
+        curses.curs_set(0)
         _draw_prompt_status(ui, editor, theme)
 
     ui.mainwin.noutrefresh()

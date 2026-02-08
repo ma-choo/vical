@@ -27,7 +27,7 @@ def goto(editor):
 
     if not date_str:
         new_date = date.today()
-        editor.msg = ("goto: today", 0)
+        editor.set_msg("Goto: Today")
         editor.set_selected_date(new_date, reset_items=True)
         return
 
@@ -44,10 +44,10 @@ def goto(editor):
             raise ValueError
 
         new_date = date(year, month, day)
-        editor.msg = (f"goto: {new_date:%b %d, %Y}", 0)
+        editor.set_msg(f"Goto: {new_date:%b %d %Y}")
         editor.set_selected_date(new_date, reset_items=True)
     except Exception:
-        editor.msg = (f"Invalid date: {date_str}", 1)
+        editor.set_msg(f"Invalid date: {date_str}", error=1)
 
 
 def left(editor, count=1):

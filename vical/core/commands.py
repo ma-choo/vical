@@ -6,18 +6,19 @@ from datetime import date, timedelta
 
 from vical.core.editor import Mode, View
 from vical.core.subcalendar import Subcalendar, CalendarItem, Task, Event
-from vical.core.state import capture_state, apply_state, undoable
 from vical.storage.jsonstore import save_subcalendars
+from vical.history.ops import OpSetAttr, OpInsertItem, OpRemoveItem, OpMoveItem
+from vical.history.transaction import set_attr, insert_item, remove_item, move_item, transaction
 
 
-# ---COMMON---
+# ---- EDITOR COMMANDS ----
 def quit(editor):
     """:quit
 
     Quit the program, check for unsaved changes.
     """
-    if editor.modified:
-        editor.msg = ("No write since last change. Type :q! to force quit", 1)
+    if editor.dirty:
+        editor.set_msg("No write since last change. Type :q! to force quit", error=1)
     else:
         raise SystemExit
 
@@ -38,9 +39,9 @@ def write(editor):
     try:
         save_subcalendars(editor.subcalendars)
     except Exception as e:
-        editor.msg = (f"{e}", 1)
+        editor.set_msg(f"{e}", error=1)
     editor.mark_saved()
-    editor.msg = ("Write successful", 0)
+    editor.set_msg("Write successful")
 
 
 def write_quit(editor):
@@ -52,43 +53,64 @@ def write_quit(editor):
     quit(editor)
 
 
+def change_mode(self, mode=None):
+        """:change_mode <mode>
+
+        Change mode to "visual" (selection) or "normal" mode.
+        """
+        if mode is None:
+            self.fm.notify('Syntax: change_mode <mode>', bad=True)
+            return
+        if mode == self.mode:  # pylint: disable=access-member-before-definition
+            return
+        if mode == 'visual':
+            self._visual_pos_start = self.thisdir.pointer
+            self._visual_move_cycles = 0
+            self._previous_selection = set(self.thisdir.marked_items)
+            self.mark_files(val=not self._visual_reverse, movedown=False)
+        elif mode == 'normal':
+            if self.mode == 'visual':  # pylint: disable=access-member-before-definition
+                self._visual_pos_start = None
+                self._visual_move_cycles = None
+                self._previous_selection = None
+        else:
+            return
+        self.mode = mode
+        self.ui.status.request_redraw()
+
+
 def undo(editor):
     """:undo
-
-    Undo an action.
+    
+    
     """
     if not editor.undo_stack:
-        editor.msg = ("Nothing to undo", 1)
+        editor.set_msg("Undo: Already at oldest change")
         return
 
-    # save current state for redo
-    current_state = capture_state(editor)
-    editor.redo_stack.append(current_state)
+    tx = editor.undo_stack.pop()
+    tx.revert(editor)
+    editor.redo_stack.append(tx)
 
-    # pop previous state and apply
-    prev_state = editor.undo_stack.pop()
-    apply_state(editor, prev_state)
-    editor.msg = ("Undo", 0)
+    editor.redraw = True
+    editor.set_msg(f"Undo [#{tx.id}]: {tx.label}")
 
 
 def redo(editor):
     """:redo
-
-    Redo an action
+    
+    
     """
     if not editor.redo_stack:
-        editor.msg = ("Nothing to redo", 1)
+        editor.set_msg("Undo: Already at latest change")
         return
 
-    # save current state for undo
-    current_state = capture_state(editor)
-    editor.undo_stack.append(current_state)
+    tx = editor.redo_stack.pop()
+    tx.apply(editor)
+    editor.undo_stack.append(tx)
 
-    # pop redo state and apply
-    redo_state = editor.redo_stack.pop()
-    apply_state(editor, redo_state)
-
-    editor.msg = ("Redo", 0)
+    editor.redraw = True
+    editor.set_msg(f"Redo [#{tx.id}]: {tx.label}")
 
 
 def show_help(editor):
@@ -99,7 +121,25 @@ def show_help(editor):
     pass # TODO
 
 
-# ---CALENDAR ITEMS---
+def toggle_monthly_view(editor):
+    """:monthly
+
+    Toggle monthly view.
+    """
+    editor.view = View.MONTHLY
+    editor.redraw = True
+
+
+def toggle_weekly_view(editor):
+    """:weekly
+
+    Toggle weekly view.
+    """
+    editor.view = View.WEEKLY
+    editor.redraw = True
+
+
+# ---- CALENDAR ITEMS ----
 def new_task(editor):
     """:newtask
 
@@ -109,19 +149,21 @@ def new_task(editor):
 
     def execute(name):
         if not name.strip():
-            editor.msg = ("Task name cannot be blank", 1)
+            editor.set_msg("Task name cannot be blank", error=1)
             return
 
         new_task = Task(uid=None, name=name, tdate=selected_date, completed=False)
+        subcal = editor.selected_subcal
 
+        msg=f"Create task '{new_task.name}' in subcal '{subcal.name}'"
         try:
-            with undoable(editor):
-                editor.selected_subcal.insert_item(new_task)
+            with transaction(editor, label=msg):
+                insert_item(editor, subcal, new_task)
         except Exception as e:
-            editor.msg = (f"New task: '{name}': {e}", 1)
+            editor.set_msg(f"New task: '{name}': {e}", error=1)
             return
 
-        editor.msg = (f"Created new task: '{name}'", 0)
+        editor.set_msg(msg)
         editor.redraw = True
 
     editor.prompt = {
@@ -138,28 +180,30 @@ def new_event(editor):
 
     Create a new event on the currently selected date within the currently selected subcalendar.
     """
-    selected_date = editor.selected_date
-
     def execute(name):
         if not name.strip():
-            editor.msg = ("Event name cannot be blank", 1)
+            editor.set_msg("Event name cannot be blank", error=1)
             return
 
-        if not editor.visual_anchor_date: # no visual selection, single day date
-            new_event = Event(uid=None, name=name, start_date=selected_date, end_date=selected_date)
-        else: # visual selection supports date range
-            _start_date = min(editor.visual_anchor_date, editor.selected_date)
-            _end_date = max(editor.visual_anchor_date, editor.selected_date)
-            new_event = Event(uid=None, name=name, start_date=_start_date, end_date=_end_date)
+        if editor.visual_anchor_date: # visual selection: start and end date have a range
+            start = min(editor.visual_anchor_date, editor.selected_date)
+            end = max(editor.visual_anchor_date, editor.selected_date)
+        else: # no visual selection: start and end dates are the same
+            start = end = editor.selected_date
 
+        subcal = editor.selected_subcal
+        new_event = Event(uid=None, name=name, start_date=start, end_date=end)
+
+        msg=f"Create event '{new_event.name}' in subcal '{subcal.name}'"
         try:
-            with undoable(editor):
-                editor.selected_subcal.insert_item(new_event)
+            with transaction(editor, label=msg):
+                insert_item(editor, subcal, new_event)
         except Exception as e:
-            editor.msg = (f"New event: '{name}': {e}", 1)
+            editor.set_msg(f"New event: '{name}': {e}", error=1)
             return
 
-        editor.msg = (f"Created new event: '{name}'", 0)
+        editor.set_msg(msg)
+        editor.visual_anchor_date = None
         editor.redraw = True
 
     editor.prompt = {
@@ -176,18 +220,19 @@ def mark_complete(editor):
 
     Mark the selected task completed.
     """
-    item = editor.selected_item
-    if not item:
-        return  # nothing selected
+    task = editor.selected_item
+    if not task or not isinstance(task, Task):
+        return
 
-    if not isinstance(item, Task):
-        return # can only complete tasks
+    completed = not task.completed # reverse
+    action = "Complete" if completed else "Uncomplete"
 
     try:
-        with undoable(editor):
-            item.toggle_completed()
+        with transaction(editor, label=f"{action} '{task.name}'"):
+            set_attr(editor, task, "completed", completed)
     except Exception as e:
-        editor.msg = (f"Failed to mark complete '{item.name}': {e}", 1)
+        editor.set_msg(f"Failed to mark complete '{task.name}': {e}", error=1)
+        return
 
     editor.redraw = True
 
@@ -199,20 +244,24 @@ def rename_item(editor):
     """
     item = editor.selected_item
     if not item:
-        editor.msg = ("No item selected", 1)
+        editor.set_msg("Rename: No item selected")
         return
 
-    def execute(name):
-        if not name.strip():
-            editor.msg = ("Item name cannot be blank", 1)
+    def execute(new_name):
+        if not new_name.strip():
+            editor.set_msg("Item name cannot be blank", error=1)
             return
+        old_name = item.name
+
+        msg=f"Rename '{old_name}' to '{new_name}'"
         try:
-            with undoable(editor):
-                item.name = name
+            with transaction(editor, label=msg):
+                set_attr(editor, item, "name", new_name)
         except Exception as e:
-            editor.msg = (f"Failed to rename item '{item.name}': {e}", 1)
+            editor.set_msg(f"Failed to rename item '{item.name}': {e}", error=1)
             return
-        editor.msg = (f"Renamed item to '{name}'", 0)
+
+        editor.set_msg(msg)
         editor.redraw = True
 
     editor.prompt = {
@@ -231,18 +280,19 @@ def delete_item(editor):
     """
     item = editor.selected_item
     if not item:
-        editor.msg = ("No item selected", 1)
+        editor.set_msg("Delete: No item selected")
         return
 
+    msg=f"Delete '{item.name}' from '{item.parent_subcal.name}'"
     try:
-        with undoable(editor):
-            removed = item.remove()
+        with transaction(editor, label=msg):
+            editor.registers.set(item) # store item in the register
+            remove_item(editor, item)
     except Exception as e:
-        editor.msg = (f"Failed to delete item '{item.name}': {e}", 1)
+        editor.set_msg(f"Failed to delete item '{item.name}': {e}", error=1)
         return
 
-    editor.registers.set(removed)  # store just the item
-    editor.msg = (f"Deleted '{removed.name}'", 0)
+    editor.set_msg(msg)
     editor.redraw = True
     editor.clamp_item_index()
 
@@ -254,14 +304,15 @@ def yank_item(editor):
     """
     item = editor.selected_item
     if not item:
-        editor.msg = ("No item selected", 1)
+        editor.set_msg("Yank: No item selected")
         return
     editor.registers.set(item)
 
 
 def _resolve_date_selection(editor, event: Event):
     """
-    Return start_date, end_date for a pasted event.
+    Helper function to determine start_date end_date tuple from selection,
+    used for event pasting.
     """
     # visual selection: pasted event dates cover visual selection
     if editor.visual_anchor_date:
@@ -282,11 +333,15 @@ def _paste_item(editor, original_subcal=True):
     """
     payload = editor.registers.get(editor.selected_register)
     if not payload:
-        editor.msg = ("Nothing to paste", 1)
+        editor.set_msg("Paste: register is empty")
         return
 
     # build item from payload
     item = CalendarItem.from_register(payload)
+    if isinstance(item, Task):
+        item.date = editor.selected_date # tasks are always pasted on the selected date
+    elif isinstance(item, Event):
+        item.start_date, item.end_date = _resolve_date_selection(editor, item) # resolve date selection for smart event paste
 
     # determine target subcalendar
     if original_subcal:
@@ -296,23 +351,20 @@ def _paste_item(editor, original_subcal=True):
         target_subcal = editor.selected_subcal
 
     if not target_subcal:
-        editor.msg = ("Subcalendar doesn't exist", 1)
+        editor.set_msg("Subcalendar does not exist", error=1)
         return
 
-    # assign dates
-    if isinstance(item, Task):
-        item.date = editor.selected_date # tasks are always pasted on the selected date
-    elif isinstance(item, Event):
-        item.start_date, item.end_date = _resolve_date_selection(editor, item) # resolve date selection for smart event paste
-
+    msg=f"Paste '{item.name}' into '{target_subcal.name}'"
     try:
-        with undoable(editor):
-            item.insert_into(target_subcal)
+        with transaction(editor, label=msg):
+            insert_item(editor, target_subcal, item)
     except Exception as e:
-        editor.msg = (f"Failed to paste '{item.name}': {e}", 1)
+        editor.set_msg(f"Failed to paste '{item.name}': {e}", error=1)
         return
 
-    editor.msg = (f"Pasted '{item.name}' into '{target_subcal.name}'", 0)
+    editor.set_msg(msg)
+    editor.mode = Mode.NORMAL
+    editor.visual_anchor_date = None
     editor.redraw = True
 
 
@@ -332,7 +384,7 @@ def paste_item_selected_subcal(editor):
     _paste_item(editor, original_subcal=False)
 
 
-# ---SUBCALENDARS---
+# ---- SUBCALENDARS ----
 def new_subcal(editor):
     """:newcal
 
@@ -342,19 +394,18 @@ def new_subcal(editor):
 
     def execute(name):
         if not name.strip():
-            editor.msg = ("Subcalendar name cannot be blank", 1)
+            editor.set_msg("Subcalendar name cannot be blank", error=1)
             return
 
         new_subcal = Subcalendar(name)
 
         try:
-            with undoable(editor):
-                subcalendars.append(new_subcal)
+            subcalendars.append(new_subcal)
         except Exception as e:
-            editor.msg = (f"Failed to create subcalendar '{name}': {e}", 1)
+            editor.set_msg(f"Failed to create subcalendar '{name}': {e}", error=1)
             return
 
-        editor.msg = (f"Created new subcalendar: '{name}'", 0)
+        editor.set_msg(f"Created new subcalendar: '{name}'")
         editor.redraw = True
 
     editor.prompt = {
@@ -374,25 +425,25 @@ def rename_subcal(editor):
     subcal = editor.selected_subcal
 
     if not subcal:
-        editor.msg = ("No subcalendar selected", 1)
+        editor.set_msg("No subcalendar selected", error=1)
         return
 
-    def execute(name):
-        if not name.strip():
-            editor.msg = ("Subcalendar name cannot be blank", 1)
+    def execute(new_name):
+        if not new_name.strip():
+            editor.set_msg("Subcalendar name cannot be blank", error=1)
             return
         try:
-            with undoable(editor):
-                subcal.name = name
+            with transaction(editor, label="Rename subcal"):
+                set_attr(editor, subcal, "name", new_name)
         except Exception as e:
-            editor.msg = (f"Failed to rename subcalendar '{name}': {e}", 1)
+            editor.set_msg(f"Failed to rename subcalendar '{new_name}': {e}", error=1)
             return
-        editor.msg = (f"Renamed subcalendar to '{name}'", 0)
+        editor.set_msg(f"Renamed subcalendar to '{new_name}'")
         editor.redraw = True
 
     editor.prompt = {
         "label": "Rename subcalendar: ",
-        "user_input": subcal.name,
+        "user_input": subcal.new_name,
         "on_submit": execute,
     }
     editor.mode = Mode.PROMPT
@@ -405,20 +456,20 @@ def delete_subcal(editor):
     """
     subcal = editor.selected_subcal
     if not subcal:
-        editor.msg = ("No subcalendar selected", 1)
+        editor.set_msg("No subcalendar selected", error=1)
         return
 
     def confirm_delete(resp):
         if resp.lower() != "y":
-            editor.msg = ("Delete canceled", 0)
+            editor.set_msg("Delete canceled")
             return
         try:
-            with undoable(editor):
+            with transaction(editor): # TODO
                 editor.subcalendars.remove(subcal)
         except Exception as e:
-            editor.msg = (f"Failed to delete subcalendar '{subcal.name}': {e}", 1)
+            editor.set_msg(f"Failed to delete subcalendar '{subcal.name}': {e}", error=1)
             return
-        editor.msg = (f"Deleted subcalendar '{subcal.name}'", 0)
+        editor.set_msg(f"Deleted subcalendar '{subcal.name}'")
         editor.redraw = True
         editor.selected_subcal_index = max(0, editor.selected_subcal_index - 1)
 
@@ -437,7 +488,7 @@ def hide_subcal(editor):
     """
     subcal = editor.selected_subcal
     subcal.toggle_hidden()
-    editor.msg = (f"{subcal.name} {'hidden' if subcal.hidden else 'unhidden'}", 0)
+    editor.set_msg(f"{subcal.name} {'hidden' if subcal.hidden else 'unhidden'}")
     editor.redraw = True
 
 
@@ -449,20 +500,20 @@ def change_subcal_color(editor):
     subcal = editor.selected_subcal
 
     if not subcal:
-        editor.msg = ("No subcalendar selected", 1)
+        editor.set_msg("No subcalendar selected", error=1)
         return
 
-    def execute(color):
-        if not color.strip():
-            editor.msg = ("No color", 1)
+    def execute(new_color):
+        if not new_color.strip():
+            editor.set_msg(f"Color pair {new_color} does not exist", error=1)
             return
         try:
-            with undoable(editor):
-                subcal.color = color
+            with transaction(editor):
+                set_attr(editor, subcal, "color", new_color)
         except Exception as e:
-            editor.msg = (f"Failed to change subcalendar color: {e}", 1)
+            editor.set_msg(f"Failed to change subcalendar color: {e}", error=1)
             return
-        editor.msg = (f"Changed subcalendar '{subcal.name}' color to '{subcal.color}'", 0)
+        editor.set_msg(f"Changed subcalendar '{subcal.name}' color to '{subcal.color}'")
         editor.redraw = True
 
     editor.prompt = {
@@ -489,14 +540,3 @@ def prev_subcal(editor):
     if not editor.subcalendars:
         return
     editor.selected_subcal_index = (editor.selected_subcal_index - 1) % len(editor.subcalendars)
-
-
-# ---OTHER---
-def toggle_monthly_view(editor):
-    editor.view = View.MONTHLY
-    editor.redraw = True
-
-
-def toggle_weekly_view(editor):
-    editor.view = View.WEEKLY
-    editor.redraw = True

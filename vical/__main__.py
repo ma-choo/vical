@@ -12,8 +12,7 @@ operator motions, undo/redo).
 import curses
 
 from vical.gui.ui import CursesUI
-from vical.core.editor import Editor
-from vical.core.settings import Settings
+from vical.editor.editor import Editor
 from vical.input.defaults import register_default_keys, register_default_commands
 
 
@@ -21,8 +20,6 @@ def main(stdscr):
     register_default_keys()
     register_default_commands()
     editor = Editor()
-    settings = Settings
-    editor.settings_set(settings)
     ui = CursesUI(stdscr)
     ui.main(editor)
 

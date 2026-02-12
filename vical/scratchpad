@@ -7,3 +7,43 @@ ui owns drawing and input. it holds a REFERENCE to the editor so it can:
 action primitives and commands parse input and call action primitives
 
 prompt win always shows commandline buffer if it is open
+
+vical/
+│
+├── domain/                # Pure calendar model (no editor concepts)
+│   ├── __init__.py
+│   ├── subcalendar.py
+│   ├── item.py            # Task / Event base classes
+│   └── recurrence.py      # (if you add this later)
+│
+├── editor/                # Vim-like editing layer
+│   ├── __init__.py
+│   ├── editor.py          # Main orchestrator
+│   ├── commands.py
+│   ├── movement.py
+│   ├── register.py
+│   ├── selection.py       # (optional: visual logic extracted)
+│   └── modes.py           # Mode enum (move it here)
+│
+├── history/               # Undo system (infra, not domain)
+│   ├── __init__.py
+│   ├── transaction.py
+│   └── ops.py
+│
+├── ui/                    # Curses only
+│   ├── __init__.py
+│   ├── ui.py
+│   └── draw.py
+│
+├── storage/
+│   ├── __init__.py
+│   └── jsonstore.py
+│
+├── theme/
+│   ├── __init__.py
+│   ├── config.py
+│   └── manager.py
+│
+├── settings.py            # Global app settings (not domain)
+│
+└── __main__.py

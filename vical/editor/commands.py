@@ -4,7 +4,8 @@
 
 from datetime import date, timedelta
 
-from vical.enums.mode import Mode
+from vical.editor.register import calitem_from_register
+from vical.editor.editor import Mode
 from vical.enums.view import View
 from vical.core.subcalendar import Subcalendar, CalendarItem, Task, Event
 from vical.storage.jsonstore import save_subcalendars
@@ -312,7 +313,7 @@ def _paste_item(editor, original_subcal=True):
         return
 
     # build item from payload
-    item = CalendarItem.from_register(payload)
+    item = calitem_from_register(payload)
     if isinstance(item, Task):
         item.date = editor.selected_date # tasks are always pasted on the selected date
     elif isinstance(item, Event):

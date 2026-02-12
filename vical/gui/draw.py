@@ -7,7 +7,7 @@ import calendar
 from datetime import date, timedelta
 
 from vical.core.subcalendar import Task, Event
-from vical.enums.mode import Mode
+from vical.editor.editor import Mode
 from vical.enums.view import View
 
 

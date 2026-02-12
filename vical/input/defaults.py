@@ -4,7 +4,7 @@ This file is part of vical.
 License: MIT (see LICENSE)
 """
 
-from vical.core import commands
+from vical.editor import commands
 from vical.input import keys
 from vical.input.normal import register_normal_key, register_operator_key, register_motion_key
 from vical.input.command import register_command

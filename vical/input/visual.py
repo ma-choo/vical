@@ -2,10 +2,10 @@
 # This file is part of vical.
 # License: MIT (see LICENSE)
 
-from vical.core.editor import Mode
+from vical.editor.editor import Mode
 from vical.input import keys
-from vical.core import movement
-from vical.core.commands import new_event, paste_item_original_subcal, paste_item_selected_subcal
+from vical.editor import movement
+from vical.editor.commands import new_event, paste_item_original_subcal, paste_item_selected_subcal
 
 
 MOTIONS = {

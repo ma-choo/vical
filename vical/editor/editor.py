@@ -39,20 +39,28 @@ Undo/redo:
   a full redraw, like adding or removing calendar items.
 """
 
+from enum import Enum, auto
 from datetime import date, timedelta
-
-from vical.enums.mode import Mode
 from vical.enums.view import View
-from vical.core.settings import Settings
+
+from vical.settings import Settings
 from vical.storage.jsonstore import load_subcalendars
-from vical.core.register import Register
-from vical.core.shared import SettingsAware
+from vical.editor.register import Register
 
 
 SPLASH_TEXT = "vical v0.1 - Type :help for help or :q to quit"
 
 
-class Editor(SettingsAware):
+class Mode(Enum):
+    NORMAL = auto()
+    INSERT = auto()
+    VISUAL = auto()
+    OPERATOR_PENDING = auto()
+    COMMAND = auto()
+    PROMPT = auto()
+
+
+class Editor():
     def __init__(self):
         self.ui = None
         self.mode = Mode.NORMAL

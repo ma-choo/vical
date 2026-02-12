@@ -2,9 +2,9 @@
 # This file is part of vical.
 # License: MIT (see LICENSE)
 
-from vical.core.editor import Mode
+from vical.editor.editor import Mode
 from vical.input import keys
-from vical.core import movement, commands
+from vical.editor import movement, commands
 
 
 def operator_pending_input(editor, key):

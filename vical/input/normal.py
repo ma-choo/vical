@@ -2,10 +2,10 @@
 # This file is part of vical.
 # License: MIT (see LICENSE)
 
-from vical.core.editor import Mode
+from vical.editor.editor import Mode
 from vical.input import keys
 from vical.input.command import execute_command
-from vical.core import movement
+from vical.editor import movement
 
 
 OPERATOR_KEYS = {}

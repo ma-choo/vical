@@ -4,7 +4,7 @@
 
 import curses
 
-from vical.enums.mode import Mode
+from vical.editor.editor import Mode
 from vical.enums.view import View
 from vical.input import keys
 from vical.input.normal import normal_input
@@ -103,27 +103,6 @@ class CursesUI:
         self.request_redraw()
         self.need_redraw = True
 
-    def get_scroll_offset(self, num_items, max_visible, selected_index):
-        offset = self.day_cell_scroll_offset
-
-        if selected_index >= 0:
-            if selected_index >= offset + max_visible:
-                offset = selected_index - max_visible + 1
-            elif selected_index < offset:
-                offset = selected_index
-            offset = max(0, min(offset, max(0, num_items - max_visible)))
-
-        self.day_cell_scroll_offset = offset
-        return offset
-
-    def _update_editor_layout(self, editor):
-        if editor.settings.view == View.WEEKLY:
-            editor.max_items_visible = max(0, self.mainwin_hfactor - self.CAL_BORDERS)
-        elif editor.settings.view == View.MONTHLY:
-            editor.max_items_visible = max(0, self.mainwin_h - self.CAL_BORDERS)
-        editor.redraw = True
-        self.layout_update = False
-
     def main(self, editor):
         try:
             while True:
@@ -145,3 +124,25 @@ class CursesUI:
             self.stdscr.clear()
             self.stdscr.refresh()
             raise
+
+    # TODO: these should move to CalendarModule once we implement that
+    def get_scroll_offset(self, num_items, max_visible, selected_index):
+        offset = self.day_cell_scroll_offset
+
+        if selected_index >= 0:
+            if selected_index >= offset + max_visible:
+                offset = selected_index - max_visible + 1
+            elif selected_index < offset:
+                offset = selected_index
+            offset = max(0, min(offset, max(0, num_items - max_visible)))
+
+        self.day_cell_scroll_offset = offset
+        return offset
+
+    def _update_editor_layout(self, editor):
+        if editor.settings.view == View.WEEKLY:
+            editor.max_items_visible = max(0, self.mainwin_hfactor - self.CAL_BORDERS)
+        elif editor.settings.view == View.MONTHLY:
+            editor.max_items_visible = max(0, self.mainwin_h - self.CAL_BORDERS)
+        editor.redraw = True
+        self.layout_update = False

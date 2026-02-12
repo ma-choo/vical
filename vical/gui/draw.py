@@ -7,7 +7,8 @@ import calendar
 from datetime import date, timedelta
 
 from vical.core.subcalendar import Task, Event
-from vical.core.editor import Mode, View
+from vical.enums.mode import Mode
+from vical.enums.view import View
 
 
 def _attron(win, theme, color):
@@ -34,17 +35,51 @@ def _get_first_weekday(editor) -> int:
     Return the weekday index that the calendar starts on.
     6 = Sunday, 5 = Saturday
     """
-    return editor.week_start
+    return editor.settings.week_start
 
 
 def _get_start_of_week(d: date, editor) -> date:
     """
     Given a date, return the date of the first day of that week
-    according to editor.week_start.
+    according to editor.settings.week_start.
     """
     first_weekday = _get_first_weekday(editor)
     delta = (d.weekday() - first_weekday) % 7
     return d - timedelta(days=delta)
+
+
+def _get_first_visible_date(editor) -> date:
+    """
+    Compute the first visible date for drawing.
+    - MONTHLY: 6x7 grid starting from the first day of the month,
+               adjusted to the week start.
+    - WEEKLY: 7-day row starting from the beginning of the week.
+    """
+    if editor.settings.view == View.MONTHLY:
+        first_of_month = editor.selected_date.replace(day=1)
+        return _get_start_of_week(first_of_month, editor)
+    elif editor.settings.view == View.WEEKLY:
+        return _get_start_of_week(editor.selected_date, editor)
+
+
+def _view_boundary_crossed(editor: "Editor", new_date: date) -> bool:
+    """
+    Return True if moving to `new_date` crosses a visible view boundary.
+    Used for partial redraw optimization.
+    """
+    if editor.settings.view == View.MONTHLY:
+        return (
+            new_date.month != editor.selected_date.month
+            or new_date.year != editor.selected_date.year
+        )
+
+    elif editor.settings.view == View.WEEKLY:
+        def week_start(d):
+            offset = (d.weekday() - editor.settings.week_start) % 7
+            return d - timedelta(days=offset)
+
+        return week_start(new_date) != week_start(editor.selected_date)
+
 
 
 def update_promptwin(ui, text):
@@ -128,13 +163,13 @@ def _draw_calendar_base(ui, editor):
     ui.mainwin.erase()
 
     # grid lines 
-    if editor.view == View.MONTHLY:
+    if editor.settings.view == View.MONTHLY:
         # 6x7 rows/columns
         for y in range(1, 6):
             ui.mainwin.hline(ui.mainwin_hfactor * y, 0, curses.ACS_HLINE, ui.mainwin_w)
         for x in range(1, 7):
             ui.mainwin.vline(0, ui.mainwin_wfactor * x, curses.ACS_VLINE, ui.mainwin_h)
-    elif editor.view == View.WEEKLY:
+    elif editor.settings.view == View.WEEKLY:
         for x in range(1, 7):
             ui.mainwin.vline(0, ui.mainwin_wfactor * x, curses.ACS_VLINE, ui.mainwin_h)
     ui.mainwin.box()
@@ -189,7 +224,7 @@ def _is_event_text_visible(editor, cell_date, item):
     return (
         cell_date == editor.selected_date or
         cell_date == item.start_date or
-        cell_date.weekday() == editor.week_start
+        cell_date.weekday() == editor.settings.week_start
     )
 
 
@@ -463,7 +498,7 @@ def _draw_day_cell_weekly(ui, editor, cell_date, theme):
 
         # ---- TASKS ----
         attr = curses.color_pair(theme.pair(cal.color))
-        if getattr(item, "completed", False) and editor.dim_when_completed:
+        if getattr(item, "completed", False):
             attr = curses.color_pair(theme.pair("dim"))
 
         text = f"{EVENT_COMPLETED_MARKER if getattr(item, 'completed', False) else EVENT_UNCOMPLETED_MARKER}{item.name}"
@@ -498,9 +533,9 @@ def _draw_day_cell_weekly(ui, editor, cell_date, theme):
 
 
 def _draw_day_cell(ui, editor, cell_date, theme):
-    if editor.view == View.MONTHLY:
+    if editor.settings.view == View.MONTHLY:
         _draw_day_cell_monthly(ui, editor, cell_date, theme)
-    if editor.view == View.WEEKLY:
+    if editor.settings.view == View.WEEKLY:
         _draw_day_cell_weekly(ui, editor, cell_date, theme)
 
 
@@ -535,10 +570,6 @@ def _draw_full_week(ui, editor, theme):
         _draw_day_cell_weekly(ui, editor, cell_date, theme)
 
 
-from datetime import timedelta
-from vical.core.editor import Mode, View
-
-
 def draw_screen(ui, editor, theme):
     """
     Render the entire screen.
@@ -556,9 +587,9 @@ def draw_screen(ui, editor, theme):
 
     # --- FULL REDRAW ---
     if editor.redraw:
-        if editor.view == View.MONTHLY:
+        if editor.settings.view == View.MONTHLY:
             _draw_full_month(ui, editor, theme)
-        elif editor.view == View.WEEKLY:
+        elif editor.settings.view == View.WEEKLY:
             _draw_full_week(ui, editor, theme)
 
         ui.stdscr.refresh()
@@ -600,14 +631,16 @@ def draw_screen_old(ui, editor, theme):
     Render the entire screen.
     """
     if editor.redraw:
-        if editor.view == View.MONTHLY:
+        if editor.settings.view == View.MONTHLY:
             _draw_full_month(ui, editor, theme)
-        elif editor.view == View.WEEKLY:
+        elif editor.settings.view == View.WEEKLY:
             _draw_full_week(ui, editor, theme)
 
-        editor.redraw_counter += 1
+    
         ui.stdscr.refresh()
         editor.last_selected_date = editor.selected_date
+        editor.redraw = False
+        editor.redraw_counter += 1
     else:
         # redraw only changed day cells
         if editor.last_selected_date != editor.selected_date:
@@ -627,5 +660,3 @@ def draw_screen_old(ui, editor, theme):
     ui.mainwin.noutrefresh()
     ui.promptwin.noutrefresh()
     curses.doupdate()
-    
-    editor.redraw = False

@@ -1,0 +1,9 @@
+editor owns state and status. it does NOT know about ui.
+commands MUTATE editor state and status. they do NOT touch ui
+ui owns drawing and input. it holds a REFERENCE to the editor so it can:
+- ACCESS draw stateful attributes
+- OBSERVE status to show messages or trigger redraws
+
+action primitives and commands parse input and call action primitives
+
+prompt win always shows commandline buffer if it is open

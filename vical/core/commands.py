@@ -4,7 +4,8 @@
 
 from datetime import date, timedelta
 
-from vical.core.editor import Mode, View
+from vical.enums.mode import Mode
+from vical.enums.view import View
 from vical.core.subcalendar import Subcalendar, CalendarItem, Task, Event
 from vical.storage.jsonstore import save_subcalendars
 from vical.history.ops import OpSetAttr, OpInsertItem, OpRemoveItem, OpMoveItem
@@ -51,32 +52,6 @@ def write_quit(editor):
     """
     write(editor)
     quit(editor)
-
-
-def change_mode(self, mode=None):
-        """:change_mode <mode>
-
-        Change mode to "visual" (selection) or "normal" mode.
-        """
-        if mode is None:
-            self.fm.notify('Syntax: change_mode <mode>', bad=True)
-            return
-        if mode == self.mode:  # pylint: disable=access-member-before-definition
-            return
-        if mode == 'visual':
-            self._visual_pos_start = self.thisdir.pointer
-            self._visual_move_cycles = 0
-            self._previous_selection = set(self.thisdir.marked_items)
-            self.mark_files(val=not self._visual_reverse, movedown=False)
-        elif mode == 'normal':
-            if self.mode == 'visual':  # pylint: disable=access-member-before-definition
-                self._visual_pos_start = None
-                self._visual_move_cycles = None
-                self._previous_selection = None
-        else:
-            return
-        self.mode = mode
-        self.ui.status.request_redraw()
 
 
 def undo(editor):

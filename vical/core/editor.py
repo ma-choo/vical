@@ -40,27 +40,21 @@ Undo/redo:
 """
 
 from datetime import date, timedelta
-from enum import Enum, auto
 
-from vical.store.settings import Settings
+from vical.enums.mode import Mode
+from vical.enums.view import View
+from vical.core.settings import Settings
 from vical.storage.jsonstore import load_subcalendars
 from vical.core.register import Register
-
-
-class Mode(Enum):
-    NORMAL = auto()
-    INSERT = auto()
-    VISUAL = auto()
-    OPERATOR_PENDING = auto()
-    COMMAND = auto()
-    PROMPT = auto()
+from vical.core.shared import SettingsAware
 
 
 SPLASH_TEXT = "vical v0.1 - Type :help for help or :q to quit"
 
 
-class Editor:
+class Editor(SettingsAware):
     def __init__(self):
+        self.ui = None
         self.mode = Mode.NORMAL
         self.prompt = None
         self.operator = ""
@@ -79,8 +73,6 @@ class Editor:
         self.selected_subcal_index = 0
         self.selected_item_index = 0
 
-        self.active_state = None
-        self.saved_state = None
         self._current_tx = None
         self._saved_tx = None
         self.undo_stack = []
@@ -95,7 +87,7 @@ class Editor:
 
         self.settings = Settings()
 
-    def set_msg(self, msg, error=0): # TODO: this function name is not honest
+    def set_msg(self, msg, error=0):
         self.msg = (msg, error)
 
     def mark_for_redraw(self):
@@ -201,13 +193,13 @@ class Editor:
         Check whether a motion crosses a week, month, or year boundary.
         Used to trigger full redraws when calendar layout changes.
         """
-        if self.view == View.MONTHLY:
+        if self.settings.view == View.MONTHLY:
             return (
                 new_date.month != self.selected_date.month
                 or new_date.year != self.selected_date.year
             )
 
-        elif self.view == View.WEEKLY:
+        elif self.settings.view == View.WEEKLY:
             def week_start(d):
                 # weekday(): Monday=0 … Sunday=6
                 offset = (d.weekday() - self.week_start) % 7
@@ -216,53 +208,3 @@ class Editor:
             old_start = week_start(self.selected_date)
             new_start = week_start(new_date)
             return old_start != new_start
-
-    # ---- history ----
-    """
-    def begin_transaction(self, label=""):
-        if hasattr(self, "_current_tx") and self._current_tx is not None:
-            raise RuntimeError("Nested transactions are not allowed")
-        self._current_tx = Transaction(label)
-
-    def record(self, op: Op):
-        if not hasattr(self, "_current_tx") or self._current_tx is None:
-            raise RuntimeError("record() called outside of transaction")
-        self._current_tx.ops.append(op)
-
-    def commit_transaction(self):
-        if not hasattr(self, "_current_tx") or self._current_tx is None:
-            return
-        if not self._current_tx.ops:
-            self._current_tx = None
-            return
-        self.undo_stack.append(self._current_tx)
-        self.redo_stack.clear()
-        if len(self.undo_stack) > self.MAX_HISTORY:
-            self.undo_stack.pop(0)
-        self._current_tx = None
-
-    def set_attr(self, item, attr, new):
-        old = getattr(item, attr)
-        if old == new:
-            return
-
-        self.record(OpSetAttr(item.uid, attr, old, new))
-        setattr(item, attr, new)
-
-    
-    def undo(self):
-        if not self.undo_stack:
-            return
-        tx = self.undo_stack.pop()
-        tx.revert(self)
-        self.redo_stack.append(tx)
-        self.redraw = True
-
-    def redo(self):
-        if not self.redo_stack:
-            return
-        tx = self.redo_stack.pop()
-        tx.apply(self)
-        self.undo_stack.append(tx)
-        self.redraw = True
-    """

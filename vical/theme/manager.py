@@ -1,6 +1,8 @@
-# manager.py - Color theme manager.
-# This file is part of Vical.
 # License: MIT (see LICENSE)
+
+"""
+Color theme manager.
+"""
 
 import curses
 

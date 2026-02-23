@@ -1,11 +1,15 @@
-# jsonstore.py - JSON persistence for vical
+# jsonstore.py
 # This file is part of vical.
 # License: MIT (see LICENSE)
 
-import os
-import json
-from typing import List
+"""
+Json storage.
+"""
+
 from datetime import datetime
+import json
+import os
+from typing import List
 
 from vical.core.subcalendar import CalendarItem, Task, Event, Subcalendar
 
@@ -81,7 +85,7 @@ def subcal_from_dict(data: dict) -> Subcalendar:
     return sc
 
 
-def save_subcalendars(
+def save_subcalendars_local_json(
     subcalendars: List[Subcalendar],
     filepath: str = DATA_FILE,
 ) -> None:
@@ -96,7 +100,7 @@ def save_subcalendars(
         )
 
 
-def load_subcalendars(filepath: str = DATA_FILE) -> List[Subcalendar]:
+def load_subcalendars_local_json(filepath: str = DATA_FILE) -> List[Subcalendar]:
     if not os.path.exists(filepath):
         default = Subcalendar(None, "Default")
         return [default]

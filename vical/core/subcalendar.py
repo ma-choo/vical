@@ -1,5 +1,3 @@
-# subcalendar.py - Subcalendar and calendar item classes
-# This file is part of vical.
 # License: MIT (see LICENSE)
 
 """
@@ -11,8 +9,8 @@ Event: Item with a multiday date range.
 Subcalendar: A named collection of CalendarItems.
 """
 
-import uuid
 from datetime import date
+import uuid
 
 
 class CalendarItem:
@@ -101,8 +99,7 @@ class Event(CalendarItem):
     def duration(self) -> int:
         """
         Return the number of days the event spans.
-
-        Used by smart paste to preserve event length when duplicating or moving.
+        Used by smart paste to preserve event length.
         """
         if self.start_date and self.end_date:
             return (self.end_date - self.start_date).days + 1
@@ -120,6 +117,9 @@ class Subcalendar:
         self.hidden = False
         self.items: list[CalendarItem] = []
 
+
+    # for loading subcalendars from disk
+    # editor commands use transactions
     def insert_item(self, item: CalendarItem):
         item.parent_subcal = self
         self.items.append(item)

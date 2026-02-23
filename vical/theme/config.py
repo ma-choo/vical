@@ -1,9 +1,11 @@
-# config.py - Theme config loader.
-# This file is part of Vical.
 # License: MIT (see LICENSE)
 
-import os
+"""
+Theme config loader.
+"""
+
 import configparser
+import os
 
 
 THEME_PATH = os.path.expanduser("~/.config/vical/theme.ini")
